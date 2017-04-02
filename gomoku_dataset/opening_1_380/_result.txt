@@ -1,0 +1,40 @@
+-------------------------------------
+2017/3/16  10:50 - 2017/3/26  3:13
+Time for turn: 3600 s,   Time for match: 3600 s
+Tolerance: 1 s,   Memory: 350 MB
+Openings: start from 1, used 380, available 380
+Rule: five or more stones wins
+Opening CRC: aeded332
+Games played: 11400
+-------------------------------------
+
+YIXIN16
+wins: 3468=1779+1689,   losses: 332=121+211
+time/turn: -6205 ms (max: 224.8 s),  time/game: -157 s
+moves/game: 25,  CRC: 32a0b6c9,   memory: 212.22 MB
+
+SLOWRENJU16
+wins: 1761=1013+748,   losses: 2039=887+1151+1,  1 errors
+time/turn: -16855 ms (max: 514.4 s),  time/game: -420 s
+moves/game: 24,  CRC: 99441992,   memory: 262.95 MB
+
+RENJUSOLVER.F11
+wins: 1667=1047+620,   losses: 2133=853+1280
+time/turn: -15483 ms (max: 96.4 s),  time/game: -384 s
+moves/game: 24,  CRC: 4dab2a2d,   memory: 58.56 MB
+
+HEWER15
+wins: 1576=936+637+3,   losses: 2224=961+1263
+time/turn: 3603 ms (max: 391.8 s),  time/game: 96 s
+moves/game: 26,  CRC: 675df893,   memory: 332.01 MB
+
+GORO16
+wins: 1502=854+648,   losses: 2298=1046+1251+1,  1 errors
+time/turn: 16 s (max: 310.9 s),  time/game: 390 s
+moves/game: 23,  CRC: c0d51862,   memory: 101.70 MB
+
+TITO14
+wins: 1426=836+590,   losses: 2374=1064+1309+1,  1 errors
+time/turn: 9 s (max: 885.1 s),  time/game: 248 s
+moves/game: 25,  CRC: 2aa1cc57,   memory: 131.93 MB
+
