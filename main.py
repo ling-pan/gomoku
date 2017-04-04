@@ -8,7 +8,6 @@ import numpy as np
 import copy, os
 import random
 import keras
-from keras.datasets import mnist
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, Flatten
 from keras.layers import Conv2D, MaxPooling2D
@@ -316,8 +315,8 @@ def sl_training(data_list):
 	x_train, y_train, x_test, y_test = partition_dataset(data_list)
 	
 	# rotate and mirror the training data
-	print 'rotating and mirroring...'
-	rotate_and_mirror(x_train, y_train)
+	# print 'rotating and mirroring...'
+	# rotate_and_mirror(x_train, y_train)
 
 	# preprocessing
 	x_train = x_train.reshape(x_train.shape[0], BOARD_SIZE, BOARD_SIZE, 1)
@@ -337,30 +336,20 @@ def sl_training(data_list):
 
 	# model specification
 	model = Sequential()
-	
-	# model.add(Conv2D(32, kernel_size=(3, 3), activation='relu', input_shape=input_shape))
-	# model.add(Conv2D(64, (3, 3), activation='relu'))
-	# model.add(MaxPooling2D(pool_size=(2, 2)))
-	# model.add(Dropout(0.25))
-	# model.add(Flatten())
-	# model.add(Dense(128, activation='relu'))
-	# model.add(Dropout(0.5))
-	# model.add(Dense(NUM_CLASSES, activation='softmax'))
 
-	num_of_intermediate_layers = 12
-	model.add(Conv2D(128, kernel_size=(5, 5), activation='relu', padding='same', input_shape=input_shape))
+	num_of_intermediate_layers = 15
+	model.add(Conv2D(128, kernel_size=(5, 5), strides=(1, 1), activation='relu', padding='same', input_shape=input_shape))
 	for i in range(num_of_intermediate_layers):
-		model.add(Conv2D(128, kernel_size=(3, 3), activation='relu', padding='same'))
+		model.add(Conv2D(128, kernel_size=(3, 3), strides=(1, 1), activation='relu', padding='same'))
 	model.add(Conv2D(1, kernel_size=(1, 1), padding='same'))
 	model.add(Flatten())
-	#model.add(Bias())
 	model.add(keras.layers.core.Activation(activation='softmax'))
 
 	model.compile(loss=keras.losses.categorical_crossentropy, optimizer=keras.optimizers.Adadelta(), metrics=['accuracy'])
 	
 	# training
 	batch_size = 128
-	epochs = 12
+	epochs = 15
 	model.fit(x_train, y_train,
 	          batch_size=batch_size,
 	          epochs=epochs,
@@ -373,7 +362,10 @@ def sl_training(data_list):
 	print('Test accuracy:', score[1])
 
 if __name__ == '__main__':
-	dataset_dir = '/home/teamhuang/gomoku/gomoku_dataset'
+	# dataset_dir = '/home/teamhuang/gomoku/gomoku_dataset'
+	# dataset_dir = '/Users/panling/Desktop/gomoku_drl/gomoku_dataset/'
+	dataset_dir = os.path.abspath('gomoku_dataset')
+
 	dataset_folder_dir_list = []
 	for file in os.listdir(dataset_dir):
 		file_dir = os.path.join(dataset_dir, file)
@@ -386,15 +378,3 @@ if __name__ == '__main__':
 		data_list.extend(curr_data_list)
 
 	sl_training(data_list)
-	# file_dir = '/Users/panling/Desktop/gomoku_drl/gomoku_dataset/' + 'opening_1_380/' + '0x1-22(1).psq'
-	# curr_list = conversion(file_dir)
-	# for item in curr_list:
-	# 	state = item['state']
-	# 	move_id = item['action']
-
-	# 	move_row = move_id / 20
-	# 	move_col = move_id % 20
-	# 	print 'move_id: ', move_id, ' (', move_row, move_col, ')'
-	# 	state[move_row][move_col] = '*'
-
-	# 	print_matirx(state)
