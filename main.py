@@ -1,9 +1,7 @@
 '''
 data format: [{'state': state_1, 'action': action_1}, ..., {'state': state_n, 'action': action_n}]
-# version 1
-network input: raw board state
-network output: probability distribution
 '''
+
 import numpy as np
 import copy, os
 import random
@@ -11,6 +9,7 @@ import keras
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, Flatten
 from keras.layers import Conv2D, MaxPooling2D
+from keras.callbacks import CSVLogger
 from keras import backend as K
 
 BOARD_SIZE = 20
@@ -70,7 +69,7 @@ def print_matirx(matrix):
 		print '\n'
 	print '\n'
 
-# convert the psq file into a series of board state-action pairs
+# convert the psq file into a series of board state-action pairs and winners
 def conversion(file_dir):
 	# get necessary variables: winner, openning_stpes_cnt
 	winner = get_winner(file_dir)
@@ -115,7 +114,7 @@ def conversion(file_dir):
 		next_move_id = next_row * BOARD_SIZE + next_col
 
 		curr_board_state = copy.deepcopy(matrix) # i don't know why deepcopy is actually shallow copy...
-		state_action_pair = {'state': curr_board_state, 'action': next_move_id}
+		state_action_pair = {'state': curr_board_state, 'action': next_move_id, 'winner': winner}
 		state_action_pair_list.append(state_action_pair)
 
 		matrix[next_row][next_col] = color
@@ -130,12 +129,11 @@ def read_file_in_folder(folder_dir):
 	for file in os.listdir(folder_dir):
 		file_dir = os.path.join(folder_dir, file)
 		if os.path.splitext(file_dir)[1] == '.psq':
-			# print 'reading... ', file
 			curr_state_action_pair_list = conversion(file_dir)
 			state_action_pair_list.extend(curr_state_action_pair_list)
 	return state_action_pair_list
 
-# get (x_train, y_train) from training_dataset or (x_test, y_test) from testing dataset
+# get (x_train, y_train) from training_dataset or (x_test, y_test, w_test) from testing dataset
 def get_x_y_dataset(data):
 	x_t, y_t = [], []
 	for d in data:
@@ -147,7 +145,7 @@ def get_x_y_dataset(data):
 	y_t = np.array(y_t)
 	return x_t, y_t
 
-# partition the dataset into (x_train, y_train), (x_test, y_test)
+# partition the dataset into (x_train, y_train, w_train), (x_test, y_test, w_test)
 def partition_dataset(data_list):
 	data_cnt = len(data_list)
 	training_data_cnt = int(data_cnt * TRAINING_RATIO)
@@ -350,11 +348,13 @@ def sl_training(data_list):
 	# training
 	batch_size = 128
 	epochs = 15
+	csv_logger = CSVLogger('training.log')
 	model.fit(x_train, y_train,
 	          batch_size=batch_size,
 	          epochs=epochs,
 	          verbose=1,
-	          validation_data=(x_test, y_test))
+	          validation_data=(x_test, y_test),
+	          callbacks=[csv_logger])
 	
 	# testing
 	score = model.evaluate(x_test, y_test, verbose=0)
