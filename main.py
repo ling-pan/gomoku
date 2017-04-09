@@ -1,7 +1,3 @@
-'''
-data format: [{'state': state_1, 'action': action_1}, ..., {'state': state_n, 'action': action_n}]
-'''
-
 import numpy as np
 import copy, os
 import random
@@ -28,6 +24,7 @@ FEATURES_MAP = {
 				'alive_two': ['___xx_', '__x_x_', '_x__x_', '__xx__', '_x_x__', '_xx___'],
 				'sleep_two': ['___xx', '__x_x', '__xx_', '_x__x', '_x_x_', 'x___x', 'x__x_', '_xx__', 'x_x__', 'xx___']
 			   }
+FEATURES_VALUE_MAP = {'connect_five': 7, 'alive_four': 6, 'sleep_four': 5, 'alive_three': 4, 'sleep_three': 3, 'alive_two': 2, 'sleep_two': 1}
 PADDING_SIZE = 4
 
 def change_color(curr_color):
@@ -319,20 +316,52 @@ def update_macro_feature_plane(board_state, macro_feature_plane, player, pos_id)
 
 	return new_macro_feature_plane
 
+def get_object_micro_feature_plane(macro_feature_plane, object_feature):
+	object_micro_feature_plane = np.zeros((BOARD_SIZE, BOARD_SIZE))
+	object_micro_feature_plane[macro_feature_plane == object_feature] = 1
+	return object_micro_feature_plane
+
 # get the input to the NN, 3D imgae feature planes
 def get_micro_feature_planes(macro_feature_plane):
-	# connect-five: 7, alive-four: 6, sleep-four: 5, alive-three: 4, sleep-three: 3, alive-two: 2, sleep-two: 1, none
-	# todo: split the 2D numpy matrix macro_feature_plane into multiple binary micro_feature_planes
-	return True
+	micro_feature_planes = []
 
-def extract_feature_planes(data_list=[]):
-	# format of data_list: [[{'state': state, 'action': action, 'winner': winner}, ...], ... [{'state': state, 'action': action, 'winner': winner}]]
-	
+	# connect-five
+	connect_five = get_object_micro_feature_plane(macro_feature_plane, FEATURES_VALUE_MAP['connect_five'])
+	micro_feature_planes.append(connect_five)
+
+	# alive-four
+	alive_four = get_object_micro_feature_plane(macro_feature_plane, FEATURES_VALUE_MAP['alive_four'])
+	micro_feature_planes.append(alive_four)
+
+	# sleep-four
+	sleep_four = get_object_micro_feature_plane(macro_feature_plane, FEATURES_VALUE_MAP['sleep_four'])
+	micro_feature_planes.append(sleep_four)
+
+	# alive-three
+	alive_three = get_object_micro_feature_plane(macro_feature_plane, FEATURES_VALUE_MAP['alive_three'])
+	micro_feature_planes.append(alive_three)
+
+	# sleep-three
+	sleep_three = get_object_micro_feature_plane(macro_feature_plane, FEATURES_VALUE_MAP['sleep_three'])
+	micro_feature_planes.append(sleep_three)
+
+	# alive-two
+	alive_two = get_object_micro_feature_plane(macro_feature_plane, FEATURES_VALUE_MAP['alive_two'])
+	micro_feature_planes.append(alive_two)
+
+	# sleep-two
+	sleep_two = get_object_micro_feature_plane(macro_feature_plane, FEATURES_VALUE_MAP['sleep_two'])
+	micro_feature_planes.append(sleep_two)
+
+	micro_feature_planes = np.array(micro_feature_planes)
+	return micro_feature_planes
+
+def extract_feature_planes(data_list):	
 	# for debugging
-	data_list = []
-	data_list.append(conversion('/Users/panling/Desktop/gomoku/gomoku_dataset/opening_1_380/0x1-25(1).psq'))
+	# data_list.append(conversion('/Users/panling/Desktop/gomoku/gomoku_dataset/opening_1_380/0x1-25(1).psq'))
 
-	macro_feature_plane_list = []
+	# format of data_list: [[{'state': state, 'action': action, 'winner': winner}, ...], ... [{'state': state, 'action': action, 'winner': winner}]]
+	macro_feature_plane_list, micro_feature_planes_list = [], []
 	cnt = 0
 	for game_record in data_list:
 		print 'extracting feature planes for data ' + str(cnt)
@@ -376,17 +405,16 @@ def extract_feature_planes(data_list=[]):
 			move2_id = record['transition_move']
 
 			# raw macro feature plane
-			curr_macro_feature_plane = {'state': macro_feature_plane_combo, 'action': action}
+			# curr_macro_feature_plane = {'state': macro_feature_plane_combo, 'action': action}
+			curr_macro_feature_plane = {'state': macro_feature_plane_prev, 'action': action}
 			macro_feature_plane_list.append(curr_macro_feature_plane)
-			# split macro feature plane into micro feature planes
-			# micro_feature_planes = get_micro_feature_planes(macro_feature_plane)
-			
-			# excapsulate into BOARD_SIZE * BOARD_SIZE * FEATURE_CNT 3d units
 
-			print_np_matirx(state)
-			print_np_matirx(macro_feature_plane_prev)
+			# split macro feature plane into micro feature planes
+			micro_feature_planes = get_micro_feature_planes(macro_feature_plane)
+			micro_feature_planes_list.append({'state': micro_feature_planes, 'action': action})
+
 	# return value
-	return macro_feature_plane_list
+	return micro_feature_planes_list
 
 # get (x_train, y_train) from training_dataset or (x_test, y_test, w_test) from testing dataset
 def get_x_y_dataset(data):
@@ -437,7 +465,7 @@ def sl_training(data_list):
 	# rotate_and_mirror(x_train, y_train)
 
 	# preprocessing
-	channels_cnt = 2
+	channels_cnt = len(FEATURES_VALUE_MAP)
 	x_train = x_train.reshape(x_train.shape[0], BOARD_SIZE, BOARD_SIZE, channels_cnt)
 	x_test = x_test.reshape(x_test.shape[0], BOARD_SIZE, BOARD_SIZE, channels_cnt)
 	input_shape = (BOARD_SIZE, BOARD_SIZE, channels_cnt)
@@ -482,9 +510,8 @@ def sl_training(data_list):
 	print('Test loss:', score[0])
 	print('Test accuracy:', score[1])
 
+# TODO: rotation and reflection
 if __name__ == '__main__':
-	# dataset_dir = '/home/teamhuang/gomoku/gomoku_dataset'
-	# dataset_dir = '/Users/panling/Desktop/gomoku_drl/gomoku_dataset/'
 	dataset_dir = os.path.abspath('gomoku_dataset')
 
 	dataset_folder_dir_list = []
