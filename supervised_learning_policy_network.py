@@ -1,12 +1,12 @@
+# -*- coding:utf-8 -*-
+
 import numpy as np
 import copy, os
 import random
 import keras
 from keras.models import Sequential
-from keras.layers import Dense, Dropout, Flatten
-from keras.layers import Conv2D, MaxPooling2D
+from keras.layers import Flatten, Conv2D
 from keras.callbacks import CSVLogger
-from keras import backend as K
 from rotation_and_reflection import *
 
 BOARD_SIZE = 20
@@ -24,7 +24,6 @@ FEATURES_MAP = {
 				'alive_two': ['___xx_', '__x_x_', '_x__x_', '__xx__', '_x_x__', '_xx___'],
 				'sleep_two': ['___xx', '__x_x', '__xx_', '_x__x', '_x_x_', 'x___x', 'x__x_', '_xx__', 'x_x__', 'xx___']
 			   }
-FEATURES_VALUE_MAP = {'connect_five': 7, 'alive_four': 6, 'sleep_four': 5, 'alive_three': 4, 'sleep_three': 3, 'alive_two': 2, 'sleep_two': 1}
 PADDING_SIZE = 4
 
 def change_color(curr_color):
@@ -74,8 +73,12 @@ def is_even(num):
 def print_np_matirx(matrix):
 	row_cnt, col_cnt = matrix.shape
 	for i in range(row_cnt):
+		if i < 10:
+			print '[0' + str(i) + '] ', 
+		else:
+			print '['+str(i)+'] ', 
 		for j in range(col_cnt):
-			print int(matrix[i][j]), ' ',
+			print int(matrix[i][j]), '  ',
 		print '\n'
 	print '\n'
 
@@ -112,6 +115,7 @@ def conversion(file_dir):
 	state_action_pair_list = []
 	for i in range(st_cont_idx, game_length, 2):
 		game_step = game[i].split(',')
+
 		if (i + 1) >= game_length:
 			break
 		next_game_step = game[i + 1].split(',')
@@ -146,67 +150,120 @@ def convert_game_to_feature_planes(data_list):
 		new_move_1_id = data['action']
 		next_move_2_id = data['action_next']
 
-def read_file_in_folder(folder_dir):
-	state_action_pair_list = []
-	for file in os.listdir(folder_dir):
-		file_dir = os.path.join(folder_dir, file)
-		if os.path.splitext(file_dir)[1] == '.psq':
-			curr_state_action_pair_list = conversion(file_dir)
-			state_action_pair_list.append(curr_state_action_pair_list)
-	return state_action_pair_list
+def read_file_in_folder(folder_dir, with_feature_planes):
+	if with_feature_planes:
+		state_action_pair_list = []
+		for file in os.listdir(folder_dir):
+			file_dir = os.path.join(folder_dir, file)
+			if os.path.splitext(file_dir)[1] == '.psq':
+				curr_state_action_pair_list = conversion(file_dir)
+				state_action_pair_list.append(curr_state_action_pair_list)
+		return state_action_pair_list
+	else:
+		# debug
+		cnt = 0
+
+		state_action_pair_list = []
+		for file in os.listdir(folder_dir):
+			file_dir = os.path.join(folder_dir, file)
+			if os.path.splitext(file_dir)[1] == '.psq':
+				curr_state_action_pair_list = conversion(file_dir)
+				state_action_pair_list.extend(curr_state_action_pair_list)
+
+				# debug
+				if cnt > 0:
+					break
+				cnt += 1
+		return state_action_pair_list		
 
 # connect-five:7 alive-four:6 sleep-four:5 alive-three:4 sleep-three:3 alive-two:2 sleep-two:1 none:0
 def check_match_pattern(status):
-	features_cnt = len(FEATURES_MAP)
+	c5, a4, s4, a3, s3, a2, s2 = 0, 0, 0, 0, 0, 0, 0
+
 	# connect-five
 	for pattern in FEATURES_MAP['connect_five']:
 		if pattern in status:
-			return features_cnt
+			c5 = 1
+			break
 	# alive-four
 	for pattern in FEATURES_MAP['alive_four']:
 		if pattern in status:
-			return (features_cnt - 1)
+			a4 = 1
+			break
 	# sleep-four
 	for pattern in FEATURES_MAP['sleep_four']:
 		if pattern in status:
-			return (features_cnt - 2)
+			s4 = 1
+			break
 	# alive-three
 	for pattern in FEATURES_MAP['alive_three']:
 		if pattern in status:
-			return (features_cnt - 3)
+			a3 = 1
+			break
 	# sleep-three
 	for pattern in FEATURES_MAP['sleep_three']:
 		if pattern in status:
-			return (features_cnt - 4)
+			s3 = 1
+			break
 	# alive-two
 	for pattern in FEATURES_MAP['alive_two']:
 		if pattern in status:
-			return (features_cnt - 5)
+			a2 = 1
 	# sleep-two
 	for pattern in FEATURES_MAP['sleep_two']:
 		if pattern in status:
-			return (features_cnt - 6)
-	return (features_cnt - 7)
+			s2 = 1
+
+	res = (c5, a4, s4, a3, s3, a2, s2)
+	return res
+
+def print_sub_board_state(board_state):
+	for i in range(BOARD_SIZE):
+		for j in range(BOARD_SIZE):
+			print int(board_state[i + PADDING_SIZE][j + PADDING_SIZE]), '\n'
+		print '\n'
+	print '\n'
 
 def get_macro_feature_plane(board_state, player):
-	macro_feature_plane = np.zeros((BOARD_SIZE, BOARD_SIZE))
+	board_state = np.lib.pad(board_state, PADDING_SIZE, 'constant', constant_values=-1)
 
-	# padding the edege rows and columns with 0
-	board_state = np.lib.pad(board_state, PADDING_SIZE, 'constant', constant_values=0)
+	macro_feature_plane = [[0 for i in range(BOARD_SIZE)] for i in range(BOARD_SIZE)]
+
 	st, ed = PADDING_SIZE, BOARD_SIZE + PADDING_SIZE
-
 	for i in range(st, ed):
 		for j in range(st, ed):
-			curr_pattern = get_pos_pattern(board_state, i, j, player)
+			curr_pattern = {'connect_five': 0, 'alive_four': 0, 'sleep_four': 0, 'alive_three': 0, 'sleep_three': 0, 'alive_two': 0, 'sleep_two': 0}
+			if board_state[i][j] == 0:
+				# assume that we place player's move at position (i, j)
+				board_state[i][j] = player
+				# print 'assumption move at (', i - PADDING_SIZE, j - PADDING_SIZE, '):'
+				# print_sub_board_state(board_state)
+				# format of curr_patter: {'c5': c5_cnt, 'a4': a4_cnt, 's4': s4_cnt, 'a3': a3_cnt, 's3': s3_cnt, 'a2': a2_cnt, 's2': s2_cnt'}
+				curr_pattern = get_pos_pattern(board_state, i, j, player)
+				# print curr_pattern
+				# revert to original
+				board_state[i][j] = 0
+				# print 'reverting to original:'
+				# print_sub_board_state(board_state)
 			macro_feature_plane[i - PADDING_SIZE][j - PADDING_SIZE] = curr_pattern
 
 	return macro_feature_plane
 
+def get_summarized_pattern(horizontal_pattern, verticle_pattern, diagonal_1_pattern, diagonal_2_pattern):
+	num_of_features = len(FEATURES_MAP)
+	cnt_list = []
+	for i in range(num_of_features):
+		curr_cnt = horizontal_pattern[i] + verticle_pattern[i] + diagonal_1_pattern[i] + diagonal_2_pattern[i]
+		cnt_list.append(curr_cnt)
+	return cnt_list
+
+# !!! assuming that the board_state is properly padded !!!
 def get_pos_pattern(board_state, i, j, player):
-	# !!! assuming that the board_state is properly padded !!!
-	
-	if board_state[i][j] == 0:
-		return 0
+	# get opponent_player
+	if player == 1:
+		opponent_player = 2
+	else:
+		opponent_player = 1
 
 	# horizontal
 	horizontal_status_str = ''
@@ -215,9 +272,10 @@ def get_pos_pattern(board_state, i, j, player):
 			horizontal_status_str += 'x'
 		elif board_state[i][k] == EMPTY:
 			horizontal_status_str += '_'
-		else:
+		elif board_state[i][k] == opponent_player:
 			horizontal_status_str += 'o'
 	horizontal_pattern = check_match_pattern(horizontal_status_str)
+
 	# verticle
 	verticle_status_str = ''
 	for k in range(i - PADDING_SIZE, i + (PADDING_SIZE + 1)):
@@ -225,9 +283,10 @@ def get_pos_pattern(board_state, i, j, player):
 			verticle_status_str += 'x'
 		elif board_state[k][j] == EMPTY:
 			verticle_status_str += '_'
-		else:
+		elif board_state[k][j] == opponent_player:
 			verticle_status_str += 'o'
 	verticle_pattern = check_match_pattern(verticle_status_str)
+
 	# diagonal_1
 	diagonal_1_status_str = ''
 	for k in range(PADDING_SIZE, 0, -1):
@@ -235,16 +294,17 @@ def get_pos_pattern(board_state, i, j, player):
 			diagonal_1_status_str += 'x'
 		elif board_state[i - k][j - k] == EMPTY:
 			diagonal_1_status_str += '_'
-		else:
+		elif board_state[i - k][j - k] == opponent_player:
 			diagonal_1_status_str += 'o'
 	for k in range(PADDING_SIZE + 1):
 		if board_state[i + k][j + k] == player:
 			diagonal_1_status_str += 'x'
 		elif board_state[i + k][j + k] == EMPTY:
 			diagonal_1_status_str += '_'
-		else:
+		elif board_state[i + k][j + k]== opponent_player:
 			diagonal_1_status_str += 'o'
 	diagonal_1_pattern = check_match_pattern(diagonal_1_status_str)
+
 	# diagonal_2
 	diagonal_2_status_str = ''
 	for k in range(PADDING_SIZE, 0, -1):
@@ -252,25 +312,26 @@ def get_pos_pattern(board_state, i, j, player):
 			diagonal_2_status_str += 'x'
 		elif board_state[i + k][j - k] == EMPTY:
 			diagonal_2_status_str += '_'
-		else:
+		elif board_state[i + k][j - k] == opponent_player:
 			diagonal_2_status_str += 'o'
 	for k in range(PADDING_SIZE + 1):
 		if board_state[i - k][j + k] == player:
 			diagonal_2_status_str += 'x'
 		elif board_state[i - k][j + k] == EMPTY:
 			diagonal_2_status_str += '_'
-		else:
+		elif board_state[i - k][j + k] == opponent_player:
 			diagonal_2_status_str += 'o'
 	diagonal_2_pattern = check_match_pattern(diagonal_2_status_str)
 
-	pattern = max(horizontal_pattern, verticle_pattern, diagonal_1_pattern, diagonal_2_pattern)
-
-	tmp_res = {'h': horizontal_status_str, 'hp': horizontal_pattern,
-			   'v': verticle_status_str, 'vp': verticle_pattern,
-			   'd1': diagonal_1_status_str, 'd1p': diagonal_1_pattern,
-			   'd2': diagonal_2_status_str, 'd2p': diagonal_2_pattern,
-			   'pattern': pattern}
-	# print '['+str(i-PADDING_SIZE)+','+str(j-PADDING_SIZE)+']', horizontal_status_str, verticle_status_str, diagonal_1_status_str, diagonal_2_status_str, horizontal_pattern, verticle_pattern, diagonal_1_pattern, diagonal_2_pattern
+	summarized_pattern = get_summarized_pattern(horizontal_pattern, verticle_pattern, diagonal_1_pattern, diagonal_2_pattern)
+	c5_cnt = summarized_pattern[0]
+	a4_cnt = summarized_pattern[1]
+	s4_cnt = summarized_pattern[2]
+	a3_cnt = summarized_pattern[3]
+	s3_cnt = summarized_pattern[4]
+	a2_cnt = summarized_pattern[5]
+	s2_cnt = summarized_pattern[6]
+	pattern = {'connect_five': c5_cnt, 'alive_four': a4_cnt, 'sleep_four': s4_cnt, 'alive_three': a3_cnt, 'sleep_three': s3_cnt, 'alive_two': a2_cnt, 'sleep_two': s2_cnt}
 
 	return pattern
 
@@ -281,88 +342,110 @@ def pos_legal_check(i, j):
 		return False
 
 # update the given macro_feature_plane with new move (pos_id) in board_state
-def update_macro_feature_plane(board_state, macro_feature_plane, player, pos_id):
-	board_state = np.lib.pad(board_state, PADDING_SIZE, 'constant', constant_values=0)
+def update_macro_feature_plane(board_state, original_macro_feature_plane, player, pos_id):
+	board_state = np.lib.pad(board_state, PADDING_SIZE, 'constant', constant_values=-1)
 
-	new_macro_feature_plane = copy.deepcopy(macro_feature_plane)
+	new_macro_feature_plane = copy.deepcopy(original_macro_feature_plane)
 
-	# considered in the original BOARD_SIZE*BOARD_SIZE board
-	i, j = next_move_id_pos_conversion(pos_id)
-	# padded position
-	ii, jj= i + PADDING_SIZE, j + PADDING_SIZE
+	# id to position conversion
+	ii, jj = next_move_id_pos_conversion(pos_id)
+	i, j = ii + PADDING_SIZE, jj + PADDING_SIZE
 
-	# print '('+str(i)+', '+str(j)+')'
-
+	# update self
+	new_macro_feature_plane[ii][jj] = {'connect_five': 0, 'alive_four': 0, 'sleep_four': 0, 'alive_three': 0, 'sleep_three': 0, 'alive_two': 0, 'sleep_two': 0}
 	# horizontal
-	for k in range(jj - PADDING_SIZE, jj + PADDING_SIZE + 1):
-		if pos_legal_check(i, k - PADDING_SIZE):
-			new_pattern = get_pos_pattern(board_state, ii, k, player)
-			new_macro_feature_plane[i][k - PADDING_SIZE] = new_pattern
+	for k in range(j - PADDING_SIZE, j + PADDING_SIZE + 1):
+		if board_state[i][k] == 0 and pos_legal_check(i - PADDING_SIZE, k - PADDING_SIZE):
+			# assume that we place player's move at position (i, k)
+			board_state[i][k] = player
+			# update the feature of position (i, k)
+			curr_pattern = get_pos_pattern(board_state, i, k, player)
+			new_macro_feature_plane[i - PADDING_SIZE][k - PADDING_SIZE] = curr_pattern
+			# revert to original
+			board_state[i][k] = 0
 	# verticle
-	for k in range(ii - PADDING_SIZE, ii + PADDING_SIZE + 1):
-		if k != ii and pos_legal_check(k - PADDING_SIZE, j):
-			new_pattern = get_pos_pattern(board_state, k, jj, player)
-			new_macro_feature_plane[k - PADDING_SIZE][j] = new_pattern
+	for k in range(i - PADDING_SIZE, i + PADDING_SIZE + 1):
+		if board_state[k][j] == 0 and pos_legal_check(k - PADDING_SIZE, j - PADDING_SIZE):
+			# assume that we place player's move at position (i, k)
+			board_state[k][j] = player
+			# update the feature of position (k, j)
+			curr_pattern = get_pos_pattern(board_state, k, j, player)
+			new_macro_feature_plane[k - PADDING_SIZE][j - PADDING_SIZE] = curr_pattern
+			# revert to original
+			board_state[k][j] = 0
 	# diagonal_1
 	for k in range(-PADDING_SIZE, PADDING_SIZE + 1):
-		if k != 0 and pos_legal_check(ii + k - PADDING_SIZE, jj + k - PADDING_SIZE):
-			new_pattern = get_pos_pattern(board_state, ii + k, jj + k, player)
-			new_macro_feature_plane[(ii + k) - PADDING_SIZE][(jj + k) - PADDING_SIZE] = new_pattern
+		if board_state[i + k][j + k] == 0 and pos_legal_check(i + k - PADDING_SIZE, j + k - PADDING_SIZE):
+			# assume that we place player's move at position (i + k, j + k)
+			board_state[i + k][j + k] = player
+			# update the feature of position (i + k, j + k)
+			curr_pattern = get_pos_pattern(board_state, i + k, j + k ,player)
+			new_macro_feature_plane[i + k - PADDING_SIZE][j + k - PADDING_SIZE] = curr_pattern
+			# revert to original
+			board_state[i + k][j + k] = 0
 	# diagonal_2
 	for k in range(-PADDING_SIZE, PADDING_SIZE + 1):
-		if k != 0 and pos_legal_check(ii - k - PADDING_SIZE, jj + k - PADDING_SIZE):
-			new_pattern = get_pos_pattern(board_state, ii - k, jj + k, player)
-			new_macro_feature_plane[(ii - k) - PADDING_SIZE][(jj + k) - PADDING_SIZE] = new_pattern
+		if board_state[i - k][j + k] == 0 and pos_legal_check(i - k - PADDING_SIZE, j + k - PADDING_SIZE):
+			# assume that we place player's move at position (i - k, j + k)
+			board_state[i - k][j + k] = player
+			# update the feature of position (i - k, j + k)
+			curr_pattern = get_pos_pattern(board_state, i - k, j + k, player)
+			new_macro_feature_plane[i - k - PADDING_SIZE][j + k - PADDING_SIZE] = curr_pattern
+			# revert to original
+			board_state[i - k][j + k] = 0
 
 	return new_macro_feature_plane
 
-def get_object_micro_feature_plane(macro_feature_plane, object_feature):
-	object_micro_feature_plane = np.zeros((BOARD_SIZE, BOARD_SIZE))
-	object_micro_feature_plane[macro_feature_plane == object_feature] = 1
-	return object_micro_feature_plane
-
 # get the input to the NN, 3D imgae feature planes
 def get_micro_feature_planes(macro_feature_plane):
-	micro_feature_planes = []
-
-	# connect-five
-	connect_five = get_object_micro_feature_plane(macro_feature_plane, FEATURES_VALUE_MAP['connect_five'])
-	micro_feature_planes.append(connect_five)
-
-	# alive-four
-	alive_four = get_object_micro_feature_plane(macro_feature_plane, FEATURES_VALUE_MAP['alive_four'])
-	micro_feature_planes.append(alive_four)
-
-	# sleep-four
-	sleep_four = get_object_micro_feature_plane(macro_feature_plane, FEATURES_VALUE_MAP['sleep_four'])
-	micro_feature_planes.append(sleep_four)
-
-	# alive-three
-	alive_three = get_object_micro_feature_plane(macro_feature_plane, FEATURES_VALUE_MAP['alive_three'])
-	micro_feature_planes.append(alive_three)
-
-	# sleep-three
-	sleep_three = get_object_micro_feature_plane(macro_feature_plane, FEATURES_VALUE_MAP['sleep_three'])
-	micro_feature_planes.append(sleep_three)
-
-	# alive-two
-	alive_two = get_object_micro_feature_plane(macro_feature_plane, FEATURES_VALUE_MAP['alive_two'])
-	micro_feature_planes.append(alive_two)
-
-	# sleep-two
-	sleep_two = get_object_micro_feature_plane(macro_feature_plane, FEATURES_VALUE_MAP['sleep_two'])
-	micro_feature_planes.append(sleep_two)
-
-	micro_feature_planes = np.array(micro_feature_planes)
+	micro_feature_planes = np.zeros((len(FEATURES_MAP), BOARD_SIZE, BOARD_SIZE))
+	for i in range(BOARD_SIZE):
+		for j in range(BOARD_SIZE):
+			curr_feature_map = macro_feature_plane[i][j]
+			# connect-five
+			micro_feature_planes[0][i][j] = curr_feature_map['connect_five']
+			# alive-four
+			micro_feature_planes[1][i][j] = curr_feature_map['alive_four']
+			# sleep-four
+			micro_feature_planes[2][i][j] = curr_feature_map['sleep_four']
+			# alive-three
+			micro_feature_planes[3][i][j] = curr_feature_map['alive_three']
+			# sleep-three
+			micro_feature_planes[4][i][j] = curr_feature_map['sleep_three']
+			# alive-two
+			micro_feature_planes[5][i][j] = curr_feature_map['alive_two']
+			# sleep-two
+			micro_feature_planes[6][i][j] = curr_feature_map['sleep_two']
+			# debug
+			# print '(', i, j, '): ', curr_feature_map
+			# print int(micro_feature_planes[0][i][j]), int(micro_feature_planes[1][i][j]), int(micro_feature_planes[2][i][j]), int(micro_feature_planes[3][i][j]), int(micro_feature_planes[4][i][j]), int(micro_feature_planes[5][i][j]), int(micro_feature_planes[6][i][j])
 	return micro_feature_planes
 
+def print_board_state(matrix):
+	row_cnt, col_cnt = matrix.shape
+	for i in range(row_cnt):
+		if i < 10:
+			print '[0' + str(i) + '] ', 
+		else:
+			print '[' + str(i) + '] ', 
+		for j in range(col_cnt):
+			if matrix[i][j] == 0:
+				print '-',
+			elif matrix[i][j] == 1:
+				print '*',
+			elif matrix[i][j] == 2:
+				print 'o',
+			print '  ',
+		print '\n'
+	print '\n'
+
 def extract_feature_planes(data_list):	
-	# for debugging
+	# # for debugging
 	# data_list = []
 	# data_list.append(conversion('/Users/panling/Desktop/gomoku/gomoku_dataset/opening_1_380/0x1-25(1).psq'))
 
-	# format of data_list: [[{'state': state, 'action': action, 'winner': winner}, ...], ... [{'state': state, 'action': action, 'winner': winner}]]
-	macro_feature_plane_list, micro_feature_planes_list = [], []
+	macro_feature_plane_list = [] # for debug
+	micro_feature_planes_list = []
 	cnt = 0
 	for game_record in data_list:
 		print 'extracting feature planes for data ' + str(cnt)
@@ -370,6 +453,9 @@ def extract_feature_planes(data_list):
 
 		start = True
 		move1_id, move2_id = -1, -1
+
+		# for debugging
+		tmp_cnt = 0
 		for record in game_record:
 			state, action, winner = record['state'], record['action'], record['winner']
 
@@ -385,6 +471,8 @@ def extract_feature_planes(data_list):
 				start = False
 			# update macro feature planes: state_prev -> current player's move, opponent player's move -> state_curr
 			else:
+				if move1_id == -1:
+					break
 				macro_feature_plane_tmp = update_macro_feature_plane(state, macro_feature_plane_prev, winner, move1_id)
 				macro_feature_plane_tmp_loser = update_macro_feature_plane(state, macro_feature_plane_prev_loser, loser, move1_id)
 				if move2_id != -1:
@@ -405,17 +493,36 @@ def extract_feature_planes(data_list):
 			move1_id = action
 			move2_id = record['transition_move']
 
-			# raw macro feature plane
-			# curr_macro_feature_plane = {'state': macro_feature_plane_combo, 'action': action}
-			curr_macro_feature_plane = {'state': macro_feature_plane_prev, 'action': action}
-			macro_feature_plane_list.append(curr_macro_feature_plane)
-
 			# split macro feature plane into micro feature planes
-			micro_feature_planes = get_micro_feature_planes(macro_feature_plane)
-			micro_feature_planes_list.append({'state': micro_feature_planes, 'action': action})
+			micro_feature_planes = get_micro_feature_planes(macro_feature_plane_prev)
+			micro_feature_planes_loser = get_micro_feature_planes(macro_feature_plane_prev_loser)
+			micro_feature_planes_combo = []
+			micro_feature_planes_combo.extend(micro_feature_planes)
+			micro_feature_planes_combo.extend(micro_feature_planes_loser)
+			micro_feature_planes_list.append({'state': micro_feature_planes_combo, 'action': action})
 
-			# micro_feature_planes = get_micro_feature_planes(record['state'])
-			# micro_feature_planes_list.append({'state': micro_feature_planes, 'action': record['action']})
+			# # debug
+			# print 'board_state:'
+			# print_board_state(state)
+
+			# print 'feature planes for player 1:'
+			# idx = 0
+			# feature_name_list = ['connect_five', 'alive_four', 'sleep_four', 'alive_three', 'sleep_three', 'alive_two', 'sleep_two']
+			# for i in range(len(FEATURES_MAP)):
+			# 	print feature_name_list[i]
+			# 	print_np_matirx(micro_feature_planes[idx])
+			# 	idx += 1
+			# 	print '\n'
+
+			# print 'feature planes for player 2:'
+			# idx = 0
+			# feature_name_list = ['connect_five', 'alive_four', 'sleep_four', 'alive_three', 'sleep_three', 'alive_two', 'sleep_two']
+			# for i in range(len(FEATURES_MAP)):
+			# 	print feature_name_list[i]
+			# 	print_np_matirx(micro_feature_planes_loser[idx])
+			# 	idx += 1
+			# 	print '\n'
+			# tmp_cnt += 1
 
 	# return value
 	return micro_feature_planes_list
@@ -457,7 +564,7 @@ def next_move_pos_id_conversion(next_move_row, next_move_col):
 def shuffle_data(data_list):
 	return random.shuffle(data_list)
 
-def sl_training(data_list):
+def sl_training(data_list, channels_cnt):
 	# randomly shuffle the data
 	shuffle_data(data_list)
 
@@ -469,8 +576,6 @@ def sl_training(data_list):
 	# rotate_and_mirror(x_train, y_train)
 
 	# preprocessing
-	channels_cnt = len(FEATURES_VALUE_MAP)
-	print x_train.shape
 	x_train = x_train.reshape(x_train.shape[0], BOARD_SIZE, BOARD_SIZE, channels_cnt)
 	x_test = x_test.reshape(x_test.shape[0], BOARD_SIZE, BOARD_SIZE, channels_cnt)
 	input_shape = (BOARD_SIZE, BOARD_SIZE, channels_cnt)
@@ -509,6 +614,9 @@ def sl_training(data_list):
 	          verbose=1,
 	          validation_data=(x_test, y_test),
 	          callbacks=[csv_logger])
+	# save weights
+	model.save_weights('sl_policy_network_weights.hdf5')
+	print model.get_weights()
 	
 	# testing
 	score = model.evaluate(x_test, y_test, verbose=0)
@@ -517,6 +625,8 @@ def sl_training(data_list):
 
 # TODO: rotation and reflection
 if __name__ == '__main__':
+	with_feature_planes = 0
+
 	dataset_dir = os.path.abspath('gomoku_dataset')
 
 	dataset_folder_dir_list = []
@@ -527,10 +637,15 @@ if __name__ == '__main__':
 	
 	data_list = []
 	for dataset_folder_dir in dataset_folder_dir_list:
-		curr_data_list = read_file_in_folder(dataset_folder_dir)
+		curr_data_list = read_file_in_folder(dataset_folder_dir, with_feature_planes)
 		data_list.extend(curr_data_list)
 
-	macro_feature_plane_list = extract_feature_planes(data_list)
+	if with_feature_planes:
+		channels_cnt = len(FEATURES_MAP) * 2
+		feature_planes = extract_feature_planes(data_list)
+		sl_training(feature_planes, channels_cnt)
+		# extract_feature_planes([])
+	else:
+		channels_cnt = 1
+		sl_training(data_list, channels_cnt)
 
-	sl_training(macro_feature_plane_list)
-	# extract_feature_planes()
