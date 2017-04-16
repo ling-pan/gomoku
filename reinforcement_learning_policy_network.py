@@ -289,5 +289,5 @@ if __name__ == '__main__':
 	parent_dir = os.path.abspath('')
 	opening_state_list = load_opening_file(os.path.join(parent_dir, 'openings.txt'))
 
-	num_of_iterations = 1
+	num_of_iterations = 1000
 	reinforment_learning(num_of_iterations)
