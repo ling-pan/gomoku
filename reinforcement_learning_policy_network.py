@@ -4,13 +4,14 @@ import numpy as np
 import copy, os
 import random
 import keras
+from keras import optimizers
 from keras.models import Sequential
 from keras.layers import Flatten, Conv2D
 from keras.callbacks import CSVLogger
 from rotation_and_reflection import *
 
 BOARD_SIZE = 20
-opening_file_list = []
+opening_state_list = []
 
 # opponent pool initialization
 def init_opponent_pool(init_weights_dir, optimizer):
@@ -26,7 +27,7 @@ def init_opponent_pool(init_weights_dir, optimizer):
 	model.add(keras.layers.core.Activation(activation='softmax'))
 
 	model.load_weights(init_weights_dir)
-    model.compile(loss='keras.losses.categorical_crossentropy', optimizer=optimizer)
+	model.compile(loss=keras.losses.categorical_crossentropy, optimizer=optimizer)
 
 	opponent_pool = []
 	opponent_pool.append(model)
@@ -43,7 +44,7 @@ def load_opening_file(opening_file_dir):
 		curr_move_list = []
 		for move in moves:
 			move = move.split(',')
-			row, col = move[0], move[1]
+			row, col = int(move[0]), int(move[1])
 			converted_move = (9 - row, 10 + col)
 			curr_move_list.append(converted_move)
 		move_list.append(curr_move_list)
@@ -206,7 +207,7 @@ def run_one_batch_game(optimizer, current_policy_network, opponent_pool, mini_ba
 		states = np.array(state_list)
 		states = states.reshape(states.shape[0], BOARD_SIZE, BOARD_SIZE, 1)
 		moves = np.array(move_list)
-		model.train_on_batch(states, moves)
+		current_policy_network.train_on_batch(states, moves)
 
 		# calculate win ration
 		if winner == 1:
@@ -215,25 +216,29 @@ def run_one_batch_game(optimizer, current_policy_network, opponent_pool, mini_ba
 	win_ratio = win_ratio / mini_batch_size * 100
 	print 'win_ratio: ', win_ratio
 
+	return current_policy_network
+
 # opponent pool update
 def update_opponent_pool(opponent_pool, new_rl_policy_network):
 	opponent_pool.append(new_rl_policy_network)
 	return opponent_pool
 
 def reinforment_learning(num_of_iterations):
-	parent_dir = os.path.abspath('gomoku')
-	opening_file_list = load_opening_file(os.path.join(parent_dir, 'openings.txt'))
+	parent_dir = os.path.abspath('')
+	opening_state_list = load_opening_file(os.path.join(parent_dir, 'openings.txt'))
 
 	# init opponent pool
-	optimizer = keras.optimizers.SGD
-	opponent_pool = init_opponent_pool('sl_training_weights.hdf5', optimizer)
+	optimizer = optimizers.SGD()
+	opponent_pool = init_opponent_pool('sl_policy_network_weights.hdf5', optimizer)
 
 	current_player = opponent_pool[0]
 
 	# play one batch game
 	mini_batch_size = 128
 	for i in range(num_of_iterations):
-		run_one_batch_game(optimizer, current_player, opponent_pool, mini_batch_size)
+		current_player = run_one_batch_game(optimizer, current_player, opponent_pool, mini_batch_size)
+		if i != 0 and i % 500 == 0:
+			opponent_pool.append(current_player)
 
 def get_openning_steps_cnt(file_dir):
 	think_time_limit = 100
@@ -334,4 +339,5 @@ def conversion(file_dir):
 	return state_action_pair_list
 
 if __name__ == '__main__':
-	reinforment_learning()
+	num_of_iterations = 10000
+	reinforment_learning(num_of_iterations)
