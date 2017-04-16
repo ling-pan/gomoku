@@ -272,7 +272,7 @@ def eval(opponent_pool, eval_size):
 	print 'Evaluating:'
 	
 	sl_policy_networl = opponent_pool[0]
-	rl_policy_network = opponent_pool[len(opponent_pool)]
+	rl_policy_network = opponent_pool[len(opponent_pool) - 1]
 
 	win_ratio = 0
 
@@ -344,11 +344,6 @@ def eval(opponent_pool, eval_size):
 	win_ratio = (1.0 * win_ratio / eval_size) * 100
 	print 'win_ratio: ', win_ratio
 
-# opponent pool update
-def update_opponent_pool(opponent_pool, new_rl_policy_network):
-	opponent_pool.append(new_rl_policy_network)
-	return opponent_pool
-
 def reinforment_learning(num_of_iterations):
 	# init opponent pool
 	optimizer = optimizers.SGD()
@@ -361,8 +356,8 @@ def reinforment_learning(num_of_iterations):
 	for i in range(num_of_iterations):
 		print 'iteration ' + str(i) + '...'
 		current_player = run_one_batch_game(optimizer, current_player, opponent_pool, mini_batch_size)
-		if i != 0 and i % 500 == 0:
-			opponent_pool.append(current_player)
+		# if i != 0 and i % 500 == 0:
+		np.append(opponent_pool, current_player)
 
 	eval_size = 100
 	eval(opponent_pool, eval_size)
@@ -373,3 +368,4 @@ if __name__ == '__main__':
 
 	num_of_iterations = 1
 	reinforment_learning(num_of_iterations)
+
