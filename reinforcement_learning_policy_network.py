@@ -11,6 +11,7 @@ from keras.callbacks import CSVLogger
 from rotation_and_reflection import *
 
 BOARD_SIZE = 20
+NUM_CLASSES = BOARD_SIZE * BOARD_SIZE
 opening_state_list = []
 
 # opponent pool initialization
@@ -71,6 +72,9 @@ def check_winning_pattern(pattern_str):
 	winning_pattern_str = 'xxxxx'
 	return winning_pattern_str in pattern_str
 
+def move_leagl_check(i, j):
+	return (i > 0 and i < BOARD_SIZE and j > 0 and j < BOARD_SIZE)
+
 # win: 1, tie:0, nothing happens: -1
 def judge_winning_state(board_state, move_id):
 	move_i, move_j = move_id_pos_conversion(move_id)
@@ -82,51 +86,57 @@ def judge_winning_state(board_state, move_id):
 		player = 2
 		opponent_player = 1
 
+	i, j = move_i, move_j
+
 	# horizontal
 	horizontal_pattern_str = ''
 	for k in range(-4, 4):
-		if board_state[i][j - k] == 0:
-			horizontal_pattern_str += '-'
-		elif board_state[i][j - k] == player:
-			horizontal_pattern_str += 'x'
-		elif board_state[i][j - k] == opponent_player:
-			horizontal_pattern_str += 'o'
+		if move_leagl_check(i, j - k):
+			if board_state[i][j - k] == 0:
+				horizontal_pattern_str += '-'
+			elif board_state[i][j - k] == player:
+				horizontal_pattern_str += 'x'
+			elif board_state[i][j - k] == opponent_player:
+				horizontal_pattern_str += 'o'
 	if check_winning_pattern(horizontal_pattern_str):
 		return 1
 
 	# verticle
 	verticle_pattern_str = ''
 	for k in range(-4, 4):
-		if board_state[i - k][j] == 0:
-			verticle_pattern_str += '-'
-		elif board_state[i - k][j] == player:
-			verticle_pattern_str += 'x'
-		elif board_state[i - k][j] == opponent_player:
-			verticle_pattern_str += 'o'
+		if move_leagl_check(i - k, j):
+			if board_state[i - k][j] == 0:
+				verticle_pattern_str += '-'
+			elif board_state[i - k][j] == player:
+				verticle_pattern_str += 'x'
+			elif board_state[i - k][j] == opponent_player:
+				verticle_pattern_str += 'o'
 	if check_winning_pattern(verticle_pattern_str):
 		return 1
 
 	# diagonal_1
 	diagonal_1_pattern_str = ''
 	for k in range(-4, 4):
-		if board_state[i - k][j + k] == 0:
-			diagonal_1_pattern_str += '-'
-		elif board_state[i - k][j + k] == player:
-			diagonal_1_pattern_str += 'x'
-		elif board_state[i - k][j + k] == opponent_player:
-			diagonal_1_pattern_str += 'o'
+		if move_leagl_check(i - k, j + k):
+			if board_state[i - k][j + k] == 0:
+				diagonal_1_pattern_str += '-'
+			elif board_state[i - k][j + k] == player:
+				diagonal_1_pattern_str += 'x'
+			elif board_state[i - k][j + k] == opponent_player:
+				diagonal_1_pattern_str += 'o'
 	if check_winning_pattern(diagonal_1_pattern_str):
 		return 1
 
 	# diagonal_2
 	diagonal_2_pattern_str = ''
 	for k in range(-4, 4):
-		if board_state[i + k][j + k] == 0:
-			diagonal_2_pattern_str += '-'
-		elif board_state[i + k][j + k] == player:
-			diagonal_2_pattern_str += 'x'
-		elif board_state[i + k][j + k] == opponent_player:
-			diagonal_2_pattern_str += 'o'
+		if move_leagl_check(i + k, j + k):
+			if board_state[i + k][j + k] == 0:
+				diagonal_2_pattern_str += '-'
+			elif board_state[i + k][j + k] == player:
+				diagonal_2_pattern_str += 'x'
+			elif board_state[i + k][j + k] == opponent_player:
+				diagonal_2_pattern_str += 'o'
 	if check_winning_pattern(diagonal_2_pattern_str):
 		return 1
 
@@ -135,14 +145,43 @@ def judge_winning_state(board_state, move_id):
 
 	return -1 
 
+def print_np_matrix(matrix):
+	row_cnt, col_cnt = matrix.shape
+	for i in range(row_cnt):
+		if i < 10:
+			print '[0' + str(i) + '] ', 
+		else:
+			print '['+str(i)+'] ', 
+		for j in range(col_cnt):
+			print int(matrix[i][j]), '  ',
+		print '\n'
+	print '\n'
+
+def choose_move_from_prob_distribution(prob_distri, board_state):
+	to_continue_choosing = True
+	while to_continue_choosing:
+		current_choice = np.where(prob_distri == max(prob_distri))[0][0]
+		i, j = move_id_pos_conversion(current_choice)
+		if board_state[i][j] != 0:
+			prob_distri[current_choice] = -1
+		else:
+			to_continue_choosing = False
+			final_choice = current_choice
+	return final_choice
+
 # play the game between current policy network(player 1) and a randomly choosen previous policy network(player 2)
 def run_one_batch_game(optimizer, current_policy_network, opponent_pool, mini_batch_size):
 	# choose players from opponent pool
 	prev_policy_network = np.random.choice(opponent_pool)
 
+	print current_policy_network
+	print prev_policy_network
+
 	win_ratio = 0
 
 	for i in range(mini_batch_size):
+		print 'game[ '+ str(i) + ']: '
+
 		# init board_state
 		board_state = np.zeros((BOARD_SIZE, BOARD_SIZE))
 		color = 1
@@ -163,6 +202,7 @@ def run_one_batch_game(optimizer, current_policy_network, opponent_pool, mini_ba
 		continue_the_game = True
 		winner = -1
 		state_list, move_list = [], []
+		to_print = True
 		while continue_the_game:
 			# get move using current player's policy network
 			format_board_state = []
@@ -170,21 +210,24 @@ def run_one_batch_game(optimizer, current_policy_network, opponent_pool, mini_ba
 			format_board_state = np.array(format_board_state)
 			format_board_state = format_board_state.reshape(format_board_state.shape[0], BOARD_SIZE, BOARD_SIZE, 1)
 
-			predicted = model.predict(format_board_state)
-			predicted_move_id = np.where(prediced_val == max(prediced_val))[0][0]
+			predicted = current_player.predict(format_board_state)[0]
+			predicted_move_id = choose_move_from_prob_distribution(predicted, board_state)
 
-			move_row, move_col = move_id_pos_conversion(move_id)
+			move_row, move_col = move_id_pos_conversion(predicted_move_id)
+
+			# print_np_matrix(board_state)
+			# print move_row, move_col
 
 			# save current data
 			state_list.append(board_state)
-			move_list.append(move_id)
+			move_list.append(predicted_move_id)
 
 			# perform current move
 			board_state[move_row][move_col] = color
 			color = change_color(color)
 
 			# check whether to continue
-			res = judge_winning_state(board_state, move_id)
+			res = judge_winning_state(board_state, predicted_move_id)
 			if res != -1:
 				continue_the_game = False
 				if res == 0:
@@ -207,12 +250,15 @@ def run_one_batch_game(optimizer, current_policy_network, opponent_pool, mini_ba
 		states = np.array(state_list)
 		states = states.reshape(states.shape[0], BOARD_SIZE, BOARD_SIZE, 1)
 		moves = np.array(move_list)
+		moves = keras.utils.to_categorical(moves, NUM_CLASSES)
 		current_policy_network.train_on_batch(states, moves)
 
 		# calculate win ration
 		if winner == 1:
+			print 'current player won!'
 			win_ratio += 1
-
+		else:
+			print 'current player lost...'
 	win_ratio = win_ratio / mini_batch_size * 100
 	print 'win_ratio: ', win_ratio
 
@@ -224,9 +270,6 @@ def update_opponent_pool(opponent_pool, new_rl_policy_network):
 	return opponent_pool
 
 def reinforment_learning(num_of_iterations):
-	parent_dir = os.path.abspath('')
-	opening_state_list = load_opening_file(os.path.join(parent_dir, 'openings.txt'))
-
 	# init opponent pool
 	optimizer = optimizers.SGD()
 	opponent_pool = init_opponent_pool('sl_policy_network_weights.hdf5', optimizer)
@@ -236,108 +279,14 @@ def reinforment_learning(num_of_iterations):
 	# play one batch game
 	mini_batch_size = 128
 	for i in range(num_of_iterations):
+		print 'iteration ' + str(i) + '...'
 		current_player = run_one_batch_game(optimizer, current_player, opponent_pool, mini_batch_size)
-		if i != 0 and i % 500 == 0:
-			opponent_pool.append(current_player)
-
-def get_openning_steps_cnt(file_dir):
-	think_time_limit = 100
-
-	file = open(file_dir, 'r')
-	file.readline()
-	
-	openning_steps_cnt = 0
-	prev_think_time = 0
-
-	for line in file.readlines():
-		curr_think_time = int(line.split(',')[2])
-		if abs(curr_think_time - prev_think_time) > think_time_limit:
-			break
-		prev_think_time = curr_think_time
-		openning_steps_cnt += 1
-	file.close()
-
-	return openning_steps_cnt
-
-def is_odd(num):
-	return (num % 2 == 1)
-
-def is_even(num):
-	return (num % 2 == 0)
-
-def get_winner(file_dir):
-	step_cnt = int(file_dir.split('-')[1].split('(')[0])
-
-	if step_cnt % 2 == 1:
-		winner = 1
-	else:
-		winner = 2
-
-	return winner
-
-# convert the psq file into a series of board state-action pairs and winners
-def conversion(file_dir):
-	# get necessary variables: winner, openning_stpes_cnt
-	winner = get_winner(file_dir)
-	openning_steps_cnt = get_openning_steps_cnt(file_dir)
-
-	# initialize the index of valid content
-	st_cont_idx = openning_steps_cnt
-	if (is_odd(st_cont_idx) and is_even(winner)) or (is_even(st_cont_idx) and is_odd(winner)):
-		st_cont_idx -= 1
-
-	# read file content
-	file = open(file_dir, 'r')
-	lines = file.readlines()[1:][:-1]
-	game = lines[:-2]
-	players = lines[-2:]
-	
-	game_length = len(game)
-
-	# initialize the matrix with openning steps
-	# matrix = [[0 for col in range(BOARD_SIZE)] for row in range(BOARD_SIZE)]
-	matrix = np.zeros((BOARD_SIZE, BOARD_SIZE))
-	color = 1
-	for i in range(st_cont_idx):
-		game_step = game[i].split(',')
-		col, row = int(game_step[0]) - 1, int(game_step[1]) - 1
-		matrix[row][col] = color
-		color = change_color(color)
-
-	# get state-action pair list
-	state_action_pair_list = []
-	for i in range(st_cont_idx, game_length, 2):
-		game_step = game[i].split(',')
-
-		if (i + 1) >= game_length:
-			break
-		next_game_step = game[i + 1].split(',')
-
-		curr_col, curr_row = int(game_step[0]) - 1, int(game_step[1]) - 1
-		matrix[curr_row][curr_col] = color
-		color = change_color(color)
-
-		next_col, next_row = int(next_game_step[0]) - 1, int(next_game_step[1]) - 1
-		next_move_id = next_row * BOARD_SIZE + next_col
-
-		if (i + 2) >= game_length:
-			transition_move_id = -1
-		else:
-			transition_game_step = game[i + 2].split(',')
-			transition_col, transition_row = int(transition_game_step[0]) - 1, int(transition_game_step[1]) - 1
-			transition_move_id = transition_row * BOARD_SIZE + transition_col
-
-		curr_board_state = copy.deepcopy(matrix) # i don't know why deepcopy is actually shallow copy...
-		state_action_pair = {'state': curr_board_state, 'action': next_move_id, 'winner': winner, 'transition_move': transition_move_id}
-		state_action_pair_list.append(state_action_pair)
-
-		matrix[next_row][next_col] = color
-		color = change_color(color)
-
-	file.close()
-
-	return state_action_pair_list
+		# if i != 0 and i % 500 == 0:
+		# 	opponent_pool.append(current_player)
 
 if __name__ == '__main__':
-	num_of_iterations = 10000
+	parent_dir = os.path.abspath('')
+	opening_state_list = load_opening_file(os.path.join(parent_dir, 'openings.txt'))
+
+	num_of_iterations = 1
 	reinforment_learning(num_of_iterations)
