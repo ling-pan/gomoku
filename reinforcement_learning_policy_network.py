@@ -259,7 +259,8 @@ def run_one_batch_game(optimizer, current_policy_network, opponent_pool, mini_ba
 			win_ratio += 1
 		else:
 			print 'current player lost...'
-	win_ratio = win_ratio / mini_batch_size * 100
+
+	win_ratio = (1.0 * win_ratio / mini_batch_size) * 100
 	print 'win_ratio: ', win_ratio
 
 	return current_policy_network
