@@ -4,6 +4,7 @@ import numpy as np
 import copy, os
 import random
 import keras
+import argparse
 from keras.models import Sequential
 from keras.layers import Flatten, Conv2D
 from keras.callbacks import CSVLogger
@@ -152,17 +153,24 @@ def convert_game_to_feature_planes(data_list):
 
 def read_file_in_folder(folder_dir, with_feature_planes):
 	if with_feature_planes:
+		# # debug
+		# cnt = 0
 		state_action_pair_list = []
 		for file in os.listdir(folder_dir):
 			file_dir = os.path.join(folder_dir, file)
 			if os.path.splitext(file_dir)[1] == '.psq':
 				curr_state_action_pair_list = conversion(file_dir)
 				state_action_pair_list.append(curr_state_action_pair_list)
+
+				# # debug
+				# if cnt > 0:
+				# 	break
+				# cnt += 1
+
 		return state_action_pair_list
 	else:
-		# debug
-		cnt = 0
-
+		# # debug
+		# cnt = 0
 		state_action_pair_list = []
 		for file in os.listdir(folder_dir):
 			file_dir = os.path.join(folder_dir, file)
@@ -170,10 +178,11 @@ def read_file_in_folder(folder_dir, with_feature_planes):
 				curr_state_action_pair_list = conversion(file_dir)
 				state_action_pair_list.extend(curr_state_action_pair_list)
 
-				# debug
-				if cnt > 0:
-					break
-				cnt += 1
+				# # debug
+				# if cnt > 0:
+				# 	break
+				# cnt += 1
+
 		return state_action_pair_list		
 
 # connect-five:7 alive-four:6 sleep-four:5 alive-three:4 sleep-three:3 alive-two:2 sleep-two:1 none:0
@@ -444,7 +453,6 @@ def extract_feature_planes(data_list):
 	# data_list = []
 	# data_list.append(conversion('/Users/panling/Desktop/gomoku/gomoku_dataset/opening_1_380/0x1-25(1).psq'))
 
-	macro_feature_plane_list = [] # for debug
 	micro_feature_planes_list = []
 	cnt = 0
 	for game_record in data_list:
@@ -616,16 +624,39 @@ def sl_training(data_list, channels_cnt):
 	          callbacks=[csv_logger])
 	# save weights
 	model.save_weights('sl_policy_network_weights.hdf5')
-	print model.get_weights()
-	
+
 	# testing
 	score = model.evaluate(x_test, y_test, verbose=0)
 	print('Test loss:', score[0])
 	print('Test accuracy:', score[1])
 
+def get_supervised_learning_policy_network():
+	# model specification
+	model = Sequential()
+
+	num_of_intermediate_layers = 12
+	channels_cnt = 1
+	input_shape = (BOARD_SIZE, BOARD_SIZE, channels_cnt)
+	model.add(Conv2D(128, kernel_size=(5, 5), strides=(1, 1), activation='relu', padding='same', input_shape=input_shape))
+	for i in range(num_of_intermediate_layers):
+		model.add(Conv2D(128, kernel_size=(3, 3), strides=(1, 1), activation='relu', padding='same'))
+	model.add(Conv2D(1, kernel_size=(1, 1), padding='same'))
+	model.add(Flatten())
+	model.add(keras.layers.core.Activation(activation='softmax'))
+
+	model.compile(loss=keras.losses.categorical_crossentropy, optimizer=keras.optimizers.Adadelta(), metrics=['accuracy'])
+
+	model.load_weights('sl_policy_network_weights.hdf5')
+
+	return model
+
 # TODO: rotation and reflection
 if __name__ == '__main__':
-	with_feature_planes = 0
+	# argument assignment
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--with_feature_planes', dest = 'with_feature_planes', help = 'train the network with feature planes or not')
+	args = parser.parse_args()
+	with_feature_planes = int(args.with_feature_planes)
 
 	dataset_dir = os.path.abspath('gomoku_dataset')
 
@@ -640,7 +671,7 @@ if __name__ == '__main__':
 		curr_data_list = read_file_in_folder(dataset_folder_dir, with_feature_planes)
 		data_list.extend(curr_data_list)
 
-	if with_feature_planes:
+	if with_feature_planes == 1:
 		channels_cnt = len(FEATURES_MAP) * 2
 		feature_planes = extract_feature_planes(data_list)
 		sl_training(feature_planes, channels_cnt)
@@ -648,4 +679,3 @@ if __name__ == '__main__':
 	else:
 		channels_cnt = 1
 		sl_training(data_list, channels_cnt)
-
