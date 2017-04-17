@@ -452,14 +452,14 @@ def extract_feature_planes(data_list):
 	# data_list.append(conversion('/Users/panling/Desktop/gomoku/gomoku_dataset/opening_1_380/0x1-25(1).psq'))
 
 	micro_feature_planes_list = []
-	data_to_save_list = []
 	cnt = 0
 	for game_record in data_list:
 		print 'extracting feature planes for data ' + str(cnt)
-		cnt += 1
 
 		start = True
 		move1_id, move2_id = -1, -1
+
+		data_to_save_list = []
 
 		# for debugging
 		tmp_cnt = 0
@@ -545,9 +545,11 @@ def extract_feature_planes(data_list):
 			# 	print '\n'
 			# tmp_cnt += 1
 
-	# save data
-	with open('feature_planes_data.json', 'w') as json_file:
-		json_file.write(json.dumps(data_to_save_list))
+		# save data
+		with open('feature_planes_data_' + str(cnt) + '.json', 'w') as json_file:
+			json_file.write(json.dumps(data_to_save_list))
+
+		cnt += 1
 
 	# return value
 	return micro_feature_planes_list
