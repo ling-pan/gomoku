@@ -448,8 +448,8 @@ def print_board_state(matrix):
 
 def extract_feature_planes(data_list):	
 	# # for debugging
-	data_list = []
-	data_list.append(conversion('/Users/panling/Desktop/gomoku/gomoku_dataset/opening_1_380/0x1-25(1).psq'))
+	# data_list = []
+	# data_list.append(conversion('/Users/panling/Desktop/gomoku/gomoku_dataset/opening_1_380/0x1-25(1).psq'))
 
 	micro_feature_planes_list = []
 	data_to_save_list = []
