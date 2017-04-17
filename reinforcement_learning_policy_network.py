@@ -9,10 +9,14 @@ from keras.models import Sequential
 from keras.layers import Flatten, Conv2D
 from keras.callbacks import CSVLogger
 from rotation_and_reflection import *
+import keras.backend as K
 
 BOARD_SIZE = 20
 NUM_CLASSES = BOARD_SIZE * BOARD_SIZE
 opening_state_list = []
+
+def log_loss(y_true, y_pred):
+    return -y_true * K.log(K.clip(y_pred, K.epsilon(), 1.0 - K.epsilon()))
 
 # opponent pool initialization
 def init_opponent_pool(init_weights_dir, optimizer):
@@ -28,8 +32,9 @@ def init_opponent_pool(init_weights_dir, optimizer):
 	model.add(keras.layers.core.Activation(activation='softmax'))
 
 	model.load_weights(init_weights_dir)
-	model.compile(loss=keras.losses.categorical_crossentropy, optimizer=optimizer)
-
+	# model.compile(loss=keras.losses.categorical_crossentropy, optimizer=optimizer)
+	model.compile(loss=log_loss, optimizer=optimizer)
+	
 	opponent_pool = []
 	opponent_pool.append(model)
 	opponent_pool = np.array(opponent_pool)
@@ -169,109 +174,99 @@ def choose_move_from_prob_distribution(prob_distri, board_state):
 			final_choice = current_choice
 	return final_choice
 
-# play the game between current policy network(player 1) and a randomly choosen previous policy network(player 2)
-def run_one_batch_game(optimizer, current_policy_network, opponent_pool, mini_batch_size):
-	# choose players from opponent pool
-	prev_policy_network = np.random.choice(opponent_pool)
+def run_one_batch_game(current_player_policy_network, opponent_pool, mini_batch_size, optimizer):
+	# player 1: current player, player 2: opponent player
+	opponent_player_policy_network = np.random.choice(opponent_pool)
 
-	win_ratio = 0
+	win_cnt = 0
 
+	states, moves = [[] for _ in range(mini_batch_size)], [[] for _ in range(mini_batch_size)]
+
+	board_states = np.zeros((mini_batch_size, BOARD_SIZE, BOARD_SIZE))
+	opening_state_idx_list = [random.randint(0, len(opening_state_list) - 1) for _ in range(mini_batch_size)]
+	current_player_color_list = []
 	for i in range(mini_batch_size):
-		print 'game[ '+ str(i) + ']: '
-
-		# init board_state
-		board_state = np.zeros((BOARD_SIZE, BOARD_SIZE))
-		color = 1
-
-		# open with randomly chosen opening board_state
-		opening_state = random.choice(opening_state_list)
-		for opening_move in opening_state:
-			opening_row, opening_col = opening_move
-			board_state[opening_row][opening_col] = color
+		opening_moves_list = opening_state_list[opening_state_idx_list[i]]
+		color = 1 # player 1 plays the first move
+		for opening_move in opening_moves_list:
+			# get move
+			opening_move_row, opening_move_col = opening_move
+			# do move
+			board_states[i][opening_move_row][opening_move_col] = color
 			color = change_color(color)
+		current_player_color_list.append(color)
 
-		if color == 1:
-			current_player = current_policy_network
-		elif color == 2:
-			current_player = prev_policy_network
+	# self-play: record the state-action pairs and final reward
+	unfinished_games_id_list = range(mini_batch_size)
+	reward_list = [0 for i in range(mini_batch_size)]
+	while (len(unfinished_games_id_list) > 0):
+		for game_id in unfinished_games_id_list:
+			# get current basic stats
+			to_learn = False
+			current_color = current_player_color_list[game_id]
+			if current_color == 1:
+				current_player = current_player_policy_network
+				to_learn = True
+			else:
+				current_player = opponent_player_policy_network
 
-		# self-play the game to obtain reward
-		continue_the_game = True
-		winner = -1
-		state_list, move_list = [], []
-		to_print = True
-		while continue_the_game:
-			# get move using current player's policy network
-			format_board_state = []
-			format_board_state.append(board_state)
+			# predict next move
+			format_board_state = [board_states[game_id]]
 			format_board_state = np.array(format_board_state)
 			format_board_state = format_board_state.reshape(format_board_state.shape[0], BOARD_SIZE, BOARD_SIZE, 1)
 
-			predicted = current_player.predict(format_board_state)[0]
-			predicted_move_id = choose_move_from_prob_distribution(predicted, board_state)
+			predicted_move_prob_distribution = current_player.predict(format_board_state)[0]
+			predicted_move_id = choose_move_from_prob_distribution(predicted_move_prob_distribution, board_states[game_id])
 
+			# save state-action pair for the learner
+			if to_learn:
+				states[game_id].append(board_states[game_id])
+				moves[game_id].append(predicted_move_id)
+
+			# do move
 			move_row, move_col = move_id_pos_conversion(predicted_move_id)
+			board_states[game_id][move_row][move_col] = current_color
+			current_player_color_list[game_id] = change_color(current_color)
 
-			# save data for current player
-			if color == 1:
-				state_list.append(board_state)
-				move_list.append(predicted_move_id)
-
-			# perform current move
-			board_state[move_row][move_col] = color
-			color = change_color(color)
-
-			# swap players
-			if color == 1:
-				current_player = current_policy_network
-			elif color == 2:
-				current_player = prev_policy_network
-
-			# check whether to continue
-			res = judge_winning_state(board_state, predicted_move_id)
-			if res != -1:
-				continue_the_game = False
-				if res == 0:
-					winner = 0
-				else:
-					if color == 1:
-						winner = 2
+			curr_res = judge_winning_state(board_states[game_id], predicted_move_id)
+			if curr_res != -1:
+				unfinished_games_id_list.remove(game_id)
+				if curr_res == 1:
+					# curr_player wins
+					if current_player_color_list[game_id] == 2:
+						win_cnt += 1
+						reward_list[game_id] = 1
 					else:
-						winner = 1
+						reward_list[game_id] = -1
+				else:
+					# tie
+					reward_list[game_id] = 0
 
+	# "replay" to update network weights
+	for i in range(mini_batch_size):
+		reward = reward_list[i]
+		curr_states = states[i]
+		curr_moves = moves[i]
 
-		reward = 0
-		if winner == 1:
-			reward = 1
-		else:
-			reward = -1
+		curr_states = np.array(curr_states)
+		curr_states = curr_states.reshape(curr_states.shape[0], BOARD_SIZE, BOARD_SIZE, 1)
+		curr_moves = np.array(curr_moves)
+		curr_moves = keras.utils.to_categorical(curr_moves, NUM_CLASSES)
 
-		# policy gradient method to update network weights
-		optimizer.lr = abs(optimizer.lr) * reward
+		optimizer.lr = K.abs(optimizer.lr) * reward
+		current_player_policy_network.train_on_batch(curr_states, curr_moves)
+	
+	win_ratio = (1.0 * win_cnt) / mini_batch_size * 100
+	print 'win ratio =', win_ratio, '%'
 
-		states = np.array(state_list)
-		states = states.reshape(states.shape[0], BOARD_SIZE, BOARD_SIZE, 1)
-		moves = np.array(move_list)
-		moves = keras.utils.to_categorical(moves, NUM_CLASSES)
+	return current_player_policy_network
 
-		current_policy_network.train_on_batch(states, moves)
-
-		# calculate win ration
-		if winner == 1:
-			print 'current player won!'
-			win_ratio += 1
-		else:
-			print 'current player lost...'
-
-	win_ratio = (1.0 * win_ratio / mini_batch_size) * 100
-	print 'win_ratio: ', win_ratio
-
-	return current_policy_network
-
+# evaluate rl policy network by playing EVAL_SIZE games with initial sl_policy network
 def eval(opponent_pool, eval_size):
 	print 'Evaluating:'
 	
-	sl_policy_networl = opponent_pool[0]
+	# player 1: rl policy network; player 2: sl policy network
+	sl_policy_network = opponent_pool[0]
 	rl_policy_network = opponent_pool[len(opponent_pool) - 1]
 
 	win_ratio = 0
@@ -291,15 +286,14 @@ def eval(opponent_pool, eval_size):
 			color = change_color(color)
 
 		if color == 1:
-			current_player = current_policy_network
+			current_player = rl_policy_network
 		elif color == 2:
-			current_player = prev_policy_network
+			current_player = sl_policy_network
 
 		# self-play the game to obtain reward
 		continue_the_game = True
 		winner = -1
 		state_list, move_list = [], []
-		to_print = True
 		while continue_the_game:
 			# get move using current player's policy network
 			format_board_state = []
@@ -318,9 +312,9 @@ def eval(opponent_pool, eval_size):
 
 			# swap players
 			if color == 1:
-				current_player = current_policy_network
+				current_player = rl_policy_network
 			elif color == 2:
-				current_player = prev_policy_network
+				current_player = sl_policy_network
 
 			# check whether to continue
 			res = judge_winning_state(board_state, predicted_move_id)
@@ -336,13 +330,13 @@ def eval(opponent_pool, eval_size):
 
 		# calculate win ration
 		if winner == 1:
-			print 'won!'
+			print 'won!!!'
 			win_ratio += 1
 		else:
 			print 'lost...'
 
 	win_ratio = (1.0 * win_ratio / eval_size) * 100
-	print 'win_ratio: ', win_ratio
+	print '---------- Win Ratio: ', win_ratio, '----------'
 
 def reinforment_learning(num_of_iterations):
 	# init opponent pool
@@ -355,9 +349,9 @@ def reinforment_learning(num_of_iterations):
 	mini_batch_size = 128
 	for i in range(num_of_iterations):
 		print 'iteration ' + str(i) + '...'
-		current_player = run_one_batch_game(optimizer, current_player, opponent_pool, mini_batch_size)
-		# if i != 0 and i % 500 == 0:
-		np.append(opponent_pool, current_player)
+		current_player = run_one_batch_game(current_player, opponent_pool, mini_batch_size, optimizer)
+		if i != 0 and i % 50 == 0:
+			np.append(opponent_pool, current_player)
 
 	eval_size = 100
 	eval(opponent_pool, eval_size)
@@ -366,6 +360,6 @@ if __name__ == '__main__':
 	parent_dir = os.path.abspath('')
 	opening_state_list = load_opening_file(os.path.join(parent_dir, 'openings.txt'))
 
-	num_of_iterations = 1
+	num_of_iterations = 1000
 	reinforment_learning(num_of_iterations)
 
