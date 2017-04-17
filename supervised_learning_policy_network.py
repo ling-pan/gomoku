@@ -504,9 +504,12 @@ def extract_feature_planes(data_list):
 			# split macro feature plane into micro feature planes
 			micro_feature_planes = get_micro_feature_planes(macro_feature_plane_prev)
 			micro_feature_planes_loser = get_micro_feature_planes(macro_feature_plane_prev_loser)
+
 			micro_feature_planes_combo = []
 			micro_feature_planes_combo.extend(micro_feature_planes)
 			micro_feature_planes_combo.extend(micro_feature_planes_loser)
+			micro_feature_planes_combo.append(state)
+			
 			micro_feature_planes_list.append({'state': micro_feature_planes_combo, 'action': action})
 
 			# # debug
@@ -656,7 +659,7 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--with_feature_planes', dest = 'with_feature_planes', help = 'train the network with feature planes or not')
 	args = parser.parse_args()
-	with_feature_planes = int(args.with_feature_planes)
+	with_feature_planes = int(args.with_feature_planes) 
 
 	dataset_dir = os.path.abspath('gomoku_dataset')
 
