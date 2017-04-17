@@ -1,13 +1,13 @@
 # -*- coding:utf-8 -*-
 
 import numpy as np
-import copy, os
-import random
+import copy, os, random, argparse, json
+
 import keras
-import argparse
 from keras.models import Sequential
 from keras.layers import Flatten, Conv2D
 from keras.callbacks import CSVLogger
+
 from rotation_and_reflection import *
 
 BOARD_SIZE = 20
@@ -153,8 +153,7 @@ def convert_game_to_feature_planes(data_list):
 
 def read_file_in_folder(folder_dir, with_feature_planes):
 	if with_feature_planes:
-		# # debug
-		# cnt = 0
+		cnt = 0
 		state_action_pair_list = []
 		for file in os.listdir(folder_dir):
 			file_dir = os.path.join(folder_dir, file)
@@ -169,8 +168,7 @@ def read_file_in_folder(folder_dir, with_feature_planes):
 
 		return state_action_pair_list
 	else:
-		# # debug
-		# cnt = 0
+		cnt = 0
 		state_action_pair_list = []
 		for file in os.listdir(folder_dir):
 			file_dir = os.path.join(folder_dir, file)
@@ -450,10 +448,11 @@ def print_board_state(matrix):
 
 def extract_feature_planes(data_list):	
 	# # for debugging
-	# data_list = []
-	# data_list.append(conversion('/Users/panling/Desktop/gomoku/gomoku_dataset/opening_1_380/0x1-25(1).psq'))
+	data_list = []
+	data_list.append(conversion('/Users/panling/Desktop/gomoku/gomoku_dataset/opening_1_380/0x1-25(1).psq'))
 
 	micro_feature_planes_list = []
+	data_to_save_list = []
 	cnt = 0
 	for game_record in data_list:
 		print 'extracting feature planes for data ' + str(cnt)
@@ -505,6 +504,17 @@ def extract_feature_planes(data_list):
 			micro_feature_planes = get_micro_feature_planes(macro_feature_plane_prev)
 			micro_feature_planes_loser = get_micro_feature_planes(macro_feature_plane_prev_loser)
 
+			# write feature planes data
+			micro_feature_planes_l = micro_feature_planes.tolist()
+			micro_feature_planes_loser_l = micro_feature_planes_loser.tolist()
+			state_l = state.tolist()
+			feature_planes_list = []
+			feature_planes_list.extend(micro_feature_planes_l)
+			feature_planes_list.extend(micro_feature_planes_loser_l)
+			feature_planes_list.append(state_l)
+			curr_data_to_save = {'state': feature_planes_list, 'action': action}
+			data_to_save_list.append(curr_data_to_save)
+
 			micro_feature_planes_combo = []
 			micro_feature_planes_combo.extend(micro_feature_planes)
 			micro_feature_planes_combo.extend(micro_feature_planes_loser)
@@ -534,6 +544,10 @@ def extract_feature_planes(data_list):
 			# 	idx += 1
 			# 	print '\n'
 			# tmp_cnt += 1
+
+	# save data
+	with open('feature_planes_data.json', 'w') as json_file:
+		json_file.write(json.dumps(data_to_save_list))
 
 	# return value
 	return micro_feature_planes_list
@@ -586,6 +600,9 @@ def sl_training(data_list, channels_cnt):
 	# print 'rotating and mirroring...'
 	# rotate_and_mirror(x_train, y_train)
 
+	print len(data_list)
+	print x_train.shape
+
 	# preprocessing
 	x_train = x_train.reshape(x_train.shape[0], BOARD_SIZE, BOARD_SIZE, channels_cnt)
 	x_test = x_test.reshape(x_test.shape[0], BOARD_SIZE, BOARD_SIZE, channels_cnt)
@@ -633,52 +650,46 @@ def sl_training(data_list, channels_cnt):
 	print('Test loss:', score[0])
 	print('Test accuracy:', score[1])
 
-def get_supervised_learning_policy_network():
-	# model specification
-	model = Sequential()
-
-	num_of_intermediate_layers = 12
-	channels_cnt = 1
-	input_shape = (BOARD_SIZE, BOARD_SIZE, channels_cnt)
-	model.add(Conv2D(128, kernel_size=(5, 5), strides=(1, 1), activation='relu', padding='same', input_shape=input_shape))
-	for i in range(num_of_intermediate_layers):
-		model.add(Conv2D(128, kernel_size=(3, 3), strides=(1, 1), activation='relu', padding='same'))
-	model.add(Conv2D(1, kernel_size=(1, 1), padding='same'))
-	model.add(Flatten())
-	model.add(keras.layers.core.Activation(activation='softmax'))
-
-	model.compile(loss=keras.losses.categorical_crossentropy, optimizer=keras.optimizers.Adadelta(), metrics=['accuracy'])
-
-	model.load_weights('sl_policy_network_weights.hdf5')
-
-	return model
-
 # TODO: rotation and reflection
 if __name__ == '__main__':
 	# argument assignment
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--with_feature_planes', dest = 'with_feature_planes', help = 'train the network with feature planes or not')
+	parser.add_argument('--feature_planes_file', dest = 'feature_planes_file', help = 'feature planes file processed in advance')
 	args = parser.parse_args()
 	with_feature_planes = int(args.with_feature_planes) 
+	feature_planes_file = args.feature_planes_file
 
-	dataset_dir = os.path.abspath('gomoku_dataset')
+	# data preprocessing
+	if feature_planes_file == 'none':
+		dataset_dir = os.path.abspath('gomoku_dataset')
 
-	dataset_folder_dir_list = []
-	for file in os.listdir(dataset_dir):
-		file_dir = os.path.join(dataset_dir, file)
-		if os.path.isdir(file_dir):
-			dataset_folder_dir_list.append(file_dir)
-	
-	data_list = []
-	for dataset_folder_dir in dataset_folder_dir_list:
-		curr_data_list = read_file_in_folder(dataset_folder_dir, with_feature_planes)
-		data_list.extend(curr_data_list)
+		dataset_folder_dir_list = []
+		for file in os.listdir(dataset_dir):
+			file_dir = os.path.join(dataset_dir, file)
+			if os.path.isdir(file_dir):
+				dataset_folder_dir_list.append(file_dir)
+		
+		data_list = []
+		for dataset_folder_dir in dataset_folder_dir_list:
+			curr_data_list = read_file_in_folder(dataset_folder_dir, with_feature_planes)
+			data_list.extend(curr_data_list)
+	else:
+		formatted_data_list = []
+		with open(feature_planes_file, 'r') as json_file:
+			data_list = json.load(json_file)
+			for data in data_list:
+				state = np.array(data['state'])
+				action = data['action']
+				formatted_data = {'state': state, 'action': action}
+				formatted_data_list.append(formatted_data)
+		data_list = formatted_data_list
 
+	# train the supervised learning policy network
 	if with_feature_planes == 1:
-		channels_cnt = len(FEATURES_MAP) * 2
+		channels_cnt = len(FEATURES_MAP) * 2 + 1
 		feature_planes = extract_feature_planes(data_list)
 		sl_training(feature_planes, channels_cnt)
-		# extract_feature_planes([])
 	else:
 		channels_cnt = 1
 		sl_training(data_list, channels_cnt)
