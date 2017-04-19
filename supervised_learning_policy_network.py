@@ -25,6 +25,8 @@ FEATURES_MAP = {
 				'alive_two': ['___xx_', '__x_x_', '_x__x_', '__xx__', '_x_x__', '_xx___'],
 				'sleep_two': ['___xx', '__x_x', '__xx_', '_x__x', '_x_x_', 'x___x', 'x__x_', '_xx__', 'x_x__', 'xx___']
 			   }
+ZEROS = np.zeros((BOARD_SIZE, BOARD_SIZE))
+ONES = np.ones((BOARD_SIZE, BOARD_SIZE))
 PADDING_SIZE = 4
 
 def change_color(curr_color):
@@ -183,7 +185,6 @@ def read_file_in_folder(folder_dir, with_feature_planes):
 
 		return state_action_pair_list		
 
-# connect-five:7 alive-four:6 sleep-four:5 alive-three:4 sleep-three:3 alive-two:2 sleep-two:1 none:0
 def check_match_pattern(status):
 	c5, a4, s4, a3, s3, a2, s2 = 0, 0, 0, 0, 0, 0, 0
 
@@ -191,38 +192,45 @@ def check_match_pattern(status):
 	for pattern in FEATURES_MAP['connect_five']:
 		if pattern in status:
 			c5 = 1
-			break
+			return (c5, a4, s4, a3, s3, a2, s2)
+
 	# alive-four
 	for pattern in FEATURES_MAP['alive_four']:
 		if pattern in status:
 			a4 = 1
-			break
+			return (c5, a4, s4, a3, s3, a2, s2)
+
 	# sleep-four
 	for pattern in FEATURES_MAP['sleep_four']:
 		if pattern in status:
 			s4 = 1
-			break
+			return (c5, a4, s4, a3, s3, a2, s2)
+
 	# alive-three
 	for pattern in FEATURES_MAP['alive_three']:
 		if pattern in status:
 			a3 = 1
-			break
+			return (c5, a4, s4, a3, s3, a2, s2)
+
 	# sleep-three
 	for pattern in FEATURES_MAP['sleep_three']:
 		if pattern in status:
 			s3 = 1
-			break
+			return (c5, a4, s4, a3, s3, a2, s2)
+
 	# alive-two
 	for pattern in FEATURES_MAP['alive_two']:
 		if pattern in status:
 			a2 = 1
+			return (c5, a4, s4, a3, s3, a2, s2)
+
 	# sleep-two
 	for pattern in FEATURES_MAP['sleep_two']:
 		if pattern in status:
 			s2 = 1
+			return (c5, a4, s4, a3, s3, a2, s2)
 
-	res = (c5, a4, s4, a3, s3, a2, s2)
-	return res
+	return (c5, a4, s4, a3, s3, a2, s2)
 
 def print_sub_board_state(board_state):
 	for i in range(BOARD_SIZE):
@@ -446,6 +454,50 @@ def print_board_state(matrix):
 		print '\n'
 	print '\n'
 
+def get_occupation_planes(raw_board_state, winner):
+	occupation_planes = np.zeros((3, BOARD_SIZE, BOARD_SIZE))
+
+	# initialize empty, winner, loser
+	empty = 0
+	if winner == 1:
+		loser = 2
+	else:
+		loser = 1
+
+	for i in range(BOARD_SIZE):
+		for j in range(BOARD_SIZE):
+			if raw_board_state[i][j] == empty:
+				occupation_planes[empty][i][j] = 1
+			elif raw_board_state[i][j] == winner:
+				occupation_planes[winner][i][j] = 1
+			elif raw_board_state[i][j] == loser:
+				occupation_planes[loser][i][j] = 1
+
+	return occupation_planes
+
+def update_occupation_planes(prev_occupation_planes, winner, winner_move_id, loser_move_id):
+	# initialize empty, winner, loser
+	empty = 0
+	if winner == 1:
+		loser = 2
+	else:
+		loser = 1
+
+	# get winner's and loser's moves
+	winner_move_i, winner_move_j = next_move_id_pos_conversion(winner_move_id)
+	loser_move_i, loser_move_j = next_move_id_pos_conversion(loser_move_id)
+
+	new_occupation_planes = copy.deepcopy(prev_occupation_planes)
+
+	# update according to winner's move
+	new_occupation_planes[empty][winner_move_i][winner_move_j] = 0
+	new_occupation_planes[winner][winner_move_i][winner_move_j] = 1
+	# update according to loser's move
+	new_occupation_planes[empty][loser_move_i][loser_move_j] = 0
+	new_occupation_planes[loser][loser_move_i][loser_move_j] = 1
+
+	return new_occupation_planes 
+
 def extract_feature_planes(data_list):	
 	# # for debugging
 	# data_list = []
@@ -475,6 +527,7 @@ def extract_feature_planes(data_list):
 			if start:
 				macro_feature_plane = get_macro_feature_plane(state, winner)
 				macro_feature_plane_loser = get_macro_feature_plane(state, loser)
+				occupation_planes = get_occupation_planes(state, winner)
 				start = False
 			# update macro feature planes: state_prev -> current player's move, opponent player's move -> state_curr
 			else:
@@ -488,14 +541,11 @@ def extract_feature_planes(data_list):
 				else:
 					macro_feature_plane = copy.deepcopy(macro_feature_plane_tmp)
 					macro_feature_plane_loser = copy.deepcopy(macro_feature_plane_tmp_loser)
+				occupation_planes = update_occupation_planes(occupation_planes_prev, winner, move1_id, move2_id)
 			
 			macro_feature_plane_prev = copy.deepcopy(macro_feature_plane)
 			macro_feature_plane_prev_loser = copy.deepcopy(macro_feature_plane_loser)
-
-			macro_feature_plane_combo = []
-			macro_feature_plane_combo.append(macro_feature_plane_prev)
-			macro_feature_plane_combo.append(macro_feature_plane_prev_loser)
-			macro_feature_plane_combo = np.array(macro_feature_plane_combo)
+			occupation_planes_prev = copy.deepcopy(occupation_planes)
 
 			move1_id = action
 			move2_id = record['transition_move']
@@ -507,26 +557,40 @@ def extract_feature_planes(data_list):
 			# write feature planes data
 			micro_feature_planes_l = micro_feature_planes.tolist()
 			micro_feature_planes_loser_l = micro_feature_planes_loser.tolist()
-			state_l = state.tolist()
+			occupation_planes_l = occupation_planes.tolist()
+			zeros_l = ZEROS.tolist()
+			ones_l = ONES.tolist()
 			feature_planes_list = []
 			feature_planes_list.extend(micro_feature_planes_l)
 			feature_planes_list.extend(micro_feature_planes_loser_l)
-			feature_planes_list.append(state_l)
+			feature_planes_list.extend(occupation_planes_l)
+			feature_planes_list.append(zeros_l)
+			feature_planes_list.append(ones_l)
 			curr_data_to_save = {'state': feature_planes_list, 'action': action}
 			data_to_save_list.append(curr_data_to_save)
 
 			micro_feature_planes_combo = []
 			micro_feature_planes_combo.extend(micro_feature_planes)
 			micro_feature_planes_combo.extend(micro_feature_planes_loser)
-			micro_feature_planes_combo.append(state)
-			
+			micro_feature_planes_combo.extend(occupation_planes)
+			micro_feature_planes_combo.append(ZEROS)
+			micro_feature_planes_combo.append(ONES)
+
 			micro_feature_planes_list.append({'state': micro_feature_planes_combo, 'action': action})
 
 			# # debug
+			# print 'winner:', winner
+
 			# print 'board_state:'
 			# print_board_state(state)
 
-			# print 'feature planes for player 1:'
+			# print 'occupation feature planes:'
+			# occupation_planes_name_list = ['empty', 'winner', 'loser']
+			# for i in range(3):
+			# 	print_np_matirx(occupation_planes[i])
+			# 	print '\n'
+
+			# print 'basic feature planes for player 1:'
 			# idx = 0
 			# feature_name_list = ['connect_five', 'alive_four', 'sleep_four', 'alive_three', 'sleep_three', 'alive_two', 'sleep_two']
 			# for i in range(len(FEATURES_MAP)):
@@ -546,7 +610,11 @@ def extract_feature_planes(data_list):
 			# tmp_cnt += 1
 
 		# save data
-		with open('feature_planes_data_' + str(cnt) + '.json', 'w') as json_file:
+		parrent_dir = os.path.abspath('')
+		feature_planes_data_dir = parrent_dir + '/feature_planes_data'
+		if os.path.exists(feature_planes_data_dir) != True:
+			os.mkdir(feature_planes_data_dir)
+		with open(feature_planes_data_dir + '/feature_planes_data_' + str(cnt) + '.json', 'w') as json_file:
 			json_file.write(json.dumps(data_to_save_list))
 
 		cnt += 1
@@ -602,9 +670,6 @@ def sl_training(data_list, channels_cnt):
 	# print 'rotating and mirroring...'
 	# rotate_and_mirror(x_train, y_train)
 
-	print len(data_list)
-	print x_train.shape
-
 	# preprocessing
 	x_train = x_train.reshape(x_train.shape[0], BOARD_SIZE, BOARD_SIZE, channels_cnt)
 	x_test = x_test.reshape(x_test.shape[0], BOARD_SIZE, BOARD_SIZE, channels_cnt)
@@ -632,7 +697,9 @@ def sl_training(data_list, channels_cnt):
 	model.add(Flatten())
 	model.add(keras.layers.core.Activation(activation='softmax'))
 
-	model.compile(loss=keras.losses.categorical_crossentropy, optimizer=keras.optimizers.Adadelta(), metrics=['accuracy'])
+	# optimizer = keras.optimizers.Adadelta()
+	optimizer = keras.optimizers.SGD()
+	model.compile(loss=keras.losses.categorical_crossentropy, optimizer=optimizer, metrics=['accuracy'])
 	
 	# training
 	batch_size = 128
@@ -678,18 +745,25 @@ if __name__ == '__main__':
 			data_list.extend(curr_data_list)
 	else:
 		formatted_data_list = []
-		with open(feature_planes_file, 'r') as json_file:
-			data_list = json.load(json_file)
-			for data in data_list:
-				state = np.array(data['state'])
-				action = data['action']
-				formatted_data = {'state': state, 'action': action}
-				formatted_data_list.append(formatted_data)
+		folder_dir = feature_planes_file
+		for file in os.listdir(folder_dir):
+			file_dir = os.path.join(folder_dir, file)
+			with open(file_dir, 'r') as json_file:
+				data_list = json.load(json_file)
+				for data in data_list:
+					state = np.array(data['state'])
+					action = data['action']
+					formatted_data = {'state': state, 'action': action}
+					formatted_data_list.append(formatted_data)
 		data_list = formatted_data_list
 
 	# train the supervised learning policy network
 	if with_feature_planes == 1:
-		channels_cnt = len(FEATURES_MAP) * 2 + 1
+		# single: 7 basic-features: connect-five, alive-four, sleep-four, alive-three, sleep-three, alive-two, sleep-two
+		# global: occupation-features: empty, player 1, player 2, zeros, ones
+		used_features_for_single = {'connect-five', 'alive-four', 'sleep-four', 'alive-three', 'sleep-three', 'alive-two', 'sleep-two'}
+		used_features_for_global = {'empty', 'winner', 'loser', 'zeros', 'ones'}
+		channels_cnt = len(used_features_for_single) * 2 + len(used_features_for_global)
 		feature_planes = extract_feature_planes(data_list)
 		sl_training(feature_planes, channels_cnt)
 	else:
