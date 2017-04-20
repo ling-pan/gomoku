@@ -622,6 +622,88 @@ def extract_feature_planes(data_list):
 	# return value
 	return micro_feature_planes_list
 
+def extract_occupation_planes(data_list):	
+	# # for debugging
+	# data_list = []
+	# data_list.append(conversion('/Users/panling/Desktop/gomoku/gomoku_dataset/opening_1_380/0x1-25(1).psq'))
+
+	micro_feature_planes_list = []
+	cnt = 0
+	for game_record in data_list:
+		print 'extracting feature planes for data ' + str(cnt)
+
+		start = True
+		move1_id, move2_id = -1, -1
+
+		data_to_save_list = []
+
+		# for debugging
+		tmp_cnt = 0
+		for record in game_record:
+			state, action, winner = record['state'], record['action'], record['winner']
+
+			if winner == 1:
+				loser = 2
+			else:
+				loser = 1
+
+			# get initial macro feature planes
+			if start:
+				occupation_planes = get_occupation_planes(state, winner)
+				start = False
+			# update macro feature planes: state_prev -> current player's move, opponent player's move -> state_curr
+			else:
+				if move1_id == -1:
+					break
+				occupation_planes = update_occupation_planes(occupation_planes_prev, winner, move1_id, move2_id)
+			
+			occupation_planes_prev = copy.deepcopy(occupation_planes)
+
+			move1_id = action
+			move2_id = record['transition_move']
+
+			micro_feature_planes_combo.extend(occupation_planes)
+			# micro_feature_planes_combo.append(ZEROS)
+			# micro_feature_planes_combo.append(ONES)
+
+			micro_feature_planes_list.append({'state': micro_feature_planes_combo, 'action': action})
+
+			# # debug
+			# print 'winner:', winner
+
+			# print 'board_state:'
+			# print_board_state(state)
+
+			# print 'occupation feature planes:'
+			# occupation_planes_name_list = ['empty', 'winner', 'loser']
+			# for i in range(3):
+			# 	print_np_matirx(occupation_planes[i])
+			# 	print '\n'
+
+			# print 'basic feature planes for player 1:'
+			# idx = 0
+			# feature_name_list = ['connect_five', 'alive_four', 'sleep_four', 'alive_three', 'sleep_three', 'alive_two', 'sleep_two']
+			# for i in range(len(FEATURES_MAP)):
+			# 	print feature_name_list[i]
+			# 	print_np_matirx(micro_feature_planes[idx])
+			# 	idx += 1
+			# 	print '\n'
+
+			# print 'feature planes for player 2:'
+			# idx = 0
+			# feature_name_list = ['connect_five', 'alive_four', 'sleep_four', 'alive_three', 'sleep_three', 'alive_two', 'sleep_two']
+			# for i in range(len(FEATURES_MAP)):
+			# 	print feature_name_list[i]
+			# 	print_np_matirx(micro_feature_planes_loser[idx])
+			# 	idx += 1
+			# 	print '\n'
+			# tmp_cnt += 1
+
+		cnt += 1
+
+	# return value
+	return micro_feature_planes_list
+
 # get (x_train, y_train) from training_dataset or (x_test, y_test, w_test) from testing dataset
 def get_x_y_dataset(data):
 	x_t, y_t = [], []
@@ -729,42 +811,51 @@ if __name__ == '__main__':
 	with_feature_planes = int(args.with_feature_planes) 
 	feature_planes_file = args.feature_planes_file
 
-	# data preprocessing
-	if feature_planes_file == 'none':
-		dataset_dir = os.path.abspath('gomoku_dataset')
-
-		dataset_folder_dir_list = []
-		for file in os.listdir(dataset_dir):
-			file_dir = os.path.join(dataset_dir, file)
-			if os.path.isdir(file_dir):
-				dataset_folder_dir_list.append(file_dir)
-		
-		data_list = []
-		for dataset_folder_dir in dataset_folder_dir_list:
-			curr_data_list = read_file_in_folder(dataset_folder_dir, with_feature_planes)
-			data_list.extend(curr_data_list)
-	else:
-		formatted_data_list = []
-		folder_dir = feature_planes_file
-		for file in os.listdir(folder_dir):
-			file_dir = os.path.join(folder_dir, file)
-			with open(file_dir, 'r') as json_file:
-				data_list = json.load(json_file)
-				for data in data_list:
-					state = np.array(data['state'])
-					action = data['action']
-					formatted_data = {'state': state, 'action': action}
-					formatted_data_list.append(formatted_data)
-		data_list = formatted_data_list
-
 	# train the supervised learning policy network
 	if with_feature_planes == 1:
-		# single: 7 basic-features: connect-five, alive-four, sleep-four, alive-three, sleep-three, alive-two, sleep-two
+		# single: connect-five, alive-four, sleep-four, alive-three, sleep-three, alive-two, sleep-two
 		# global: occupation-features: empty, player 1, player 2, zeros, ones
 		used_features_for_single = {'connect-five', 'alive-four', 'sleep-four', 'alive-three', 'sleep-three', 'alive-two', 'sleep-two'}
 		used_features_for_global = {'empty', 'winner', 'loser', 'zeros', 'ones'}
 		channels_cnt = len(used_features_for_single) * 2 + len(used_features_for_global)
-		feature_planes = extract_feature_planes(data_list)
+
+		# extract feature planes
+		if feature_planes_file == 'none':
+			dataset_dir = os.path.abspath('gomoku_dataset')
+
+			dataset_folder_dir_list = []
+			for file in os.listdir(dataset_dir):
+				file_dir = os.path.join(dataset_dir, file)
+				if os.path.isdir(file_dir):
+					dataset_folder_dir_list.append(file_dir)
+			
+			data_list = []
+			for dataset_folder_dir in dataset_folder_dir_list:
+				curr_data_list = read_file_in_folder(dataset_folder_dir, with_feature_planes)
+				data_list.extend(curr_data_list)
+
+			# feature_planes = extract_feature_planes(data_list)
+			feature_planes = extract_occupation_planes(data_list)
+		# use extracted feature planes
+		else:
+			formatted_data_list = []
+			curr_dir = os.path.abspath('')
+			folder_dir = curr_dir + '/' + feature_planes_file
+			file_cnt = 0
+			for file in os.listdir(folder_dir):
+				file_dir = os.path.join(folder_dir, file)
+				with open(file_dir, 'r') as json_file:
+					'integrating data ' + str(file_cnt) + '...'
+					data_list = json.load(json_file)
+					for data in data_list:
+						state = np.array(data['state'])
+						action = data['action']
+						formatted_data = {'state': state, 'action': action}
+						formatted_data_list.append(formatted_data)
+				file_cnt += 1
+			feature_planes = formatted_data_list
+
+		# start training using data with feature planes
 		sl_training(feature_planes, channels_cnt)
 	else:
 		channels_cnt = 1
